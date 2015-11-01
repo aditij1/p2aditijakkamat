@@ -1,14 +1,26 @@
-// Hi
 package storageserver
 
 import (
 	"errors"
-
+	"container/list"
+	"fmt"
+	//"github.com/cmu440/tribbler/util"
 	"github.com/cmu440/tribbler/rpc/storagerpc"
+	"net"
+	"net/http"
+	"net/rpc"
+	"strconv"
+	"sync"
 )
 
 type storageServer struct {
-	// TODO: implement this!
+	nodeList *list.List
+	node storagerpc.Node
+	userIdTribbleMap map[string]*list.List  // Maps userId to a list of tribble Ids for that user
+	userIdSubscriptionMap map[string]*list.List  // Maps userId to list of users the user is subscribed to
+	tribbleIdTribbleMap map[int]string  // Maps tribbleId to string form of Tribble
+	mu *sync.Mutex
+
 }
 
 // NewStorageServer creates and starts a new StorageServer. masterServerHostPort
@@ -20,7 +32,33 @@ type storageServer struct {
 // This function should return only once all storage servers have joined the ring,
 // and should return a non-nil error if the storage server could not be started.
 func NewStorageServer(masterServerHostPort string, numNodes, port int, nodeID uint32) (StorageServer, error) {
-	return nil, errors.New("not implemented")
+	server := storageServer{
+		nodeList: list.New(),
+		node: storagerpc.Node{HostPort: net.JoinHostPort("localhost", strconv.Itoa(port)), NodeID: nodeID},
+		userIdTribbleMap: make(map[string]*list.List),
+		userIdSubscriptionMap: make(map[string]*list.List),
+		tribbleIdTribbleMap: make(map[int]string),
+		mu: &sync.Mutex{}}
+	if masterServerHostPort != "" {  // Server is a master
+		server.nodeList.PushBack(server.node)
+		err1 := rpc.RegisterName("StorageServer", storagerpc.Wrap(&server))
+		if err1 != nil {
+			fmt.Println(err1)
+			return nil, err1
+		}
+		rpc.HandleHTTP()
+		l, err2 := net.Listen("tcp", ":"+strconv.Itoa(port))
+		if err2 != nil {
+			fmt.Println(err2)
+			return nil, err2
+		}
+		go http.Serve(l, nil)
+	}
+
+
+
+	return &server, nil
+
 }
 
 func (ss *storageServer) RegisterServer(args *storagerpc.RegisterArgs, reply *storagerpc.RegisterReply) error {
