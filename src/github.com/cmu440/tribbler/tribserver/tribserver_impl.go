@@ -4,10 +4,12 @@ import (
 	"errors"
 
 	"github.com/cmu440/tribbler/rpc/tribrpc"
+	"github.com/cmu440/tribbler/rpc/libstore"
+	"github.com/cmu440/tribbler/rpc/librpc"
 )
 
 type tribServer struct {
-	// TODO: implement this!
+	libStore Libstore
 }
 
 // NewTribServer creates, starts and returns a new TribServer. masterServerHostPort
@@ -17,10 +19,22 @@ type tribServer struct {
 //
 // For hints on how to properly setup RPC, see the rpc/tribrpc package.
 func NewTribServer(masterServerHostPort, myHostPort string) (TribServer, error) {
-	return nil, errors.New("not implemented")
+	libStore,err := NewLibstore(masterServerHostPort, myHostPort, LeaseMode.Never)
+
+	if(err != nil) {
+		return nil, err
+	}
+
+	var tribServ tribServer = tribServer{
+		libStore: libStore
+	}
+
+
+	return &tribServ, nil
 }
 
 func (ts *tribServer) CreateUser(args *tribrpc.CreateUserArgs, reply *tribrpc.CreateUserReply) error {
+	
 	return errors.New("not implemented")
 }
 

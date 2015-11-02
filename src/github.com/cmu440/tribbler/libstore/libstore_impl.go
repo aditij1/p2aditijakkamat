@@ -7,7 +7,7 @@ import (
 )
 
 type libstore struct {
-	// TODO: implement this!
+	masterServ *rpc.Client
 }
 
 // NewLibstore creates a new instance of a TribServer's libstore. masterServerHostPort
@@ -34,11 +34,37 @@ type libstore struct {
 // Note that unlike in the NewTribServer and NewStorageServer functions, there is no
 // need to create a brand new HTTP handler to serve the requests (the Libstore may
 // simply reuse the TribServer's HTTP handler since the two run in the same process).
+
+
+/**
+	Libstore deals with rerouting
+
+
+	-Ask for servers until responds without error
+	-Is responsible for asking thr correct server
+
+	-StorageServer trick:
+		each user is mapped to a key, and the key maps to a list of tribbles
+*/
 func NewLibstore(masterServerHostPort, myHostPort string, mode LeaseMode) (Libstore, error) {
-	return nil, errors.New("not implemented")
+	
+	masterServ, err := rpc.DialHTTP("tcp", 
+		net.JoinHostPort("localhost", strconv.Itoa(masterServerHostPort)))
+
+	if err != nil {
+		return nil, err
+	}
+
+	var newLs Libstore = libstore {
+		masterServ: masterServ
+	}
+	
+	return &newLs, nil
 }
 
+
 func (ls *libstore) Get(key string) (string, error) {
+	
 	return "", errors.New("not implemented")
 }
 
