@@ -62,14 +62,25 @@ func (ts *tribServer) AddSubscription(args *tribrpc.SubscriptionArgs, reply *tri
 	var thisUsrId string = args.UserID
 	var subscrId string = args.TargetUserID
 
+	//check if this user present in server
 	_,err := ts.libStore.Get(util.FormatUserKey(thisUsrId))
 
 	if(err != nil) {
 		//user not found
+		reply.Status = tribrpc.NoSuchUser
 		return err
 	}
+
+	//check if subscribe user is present
+	_,err = ts.libStore.Get(util.FormatUserKey(subscrId))
+
+	if(err != nil) {
+		reply.Status = tribrpc.NoSuchTargetUser
+		return err
+	}
+
 	//add to list of subscribers
-	err = ts.libStore.AppendToList(util.FormatUserKey(thisUsrId),subscrId)
+	err = ts.libStore.AppendToList(util.FormatSubListKey(thisUsrId),subscrId)
 
 	if(err != nil) {
 		return err
@@ -80,20 +91,60 @@ func (ts *tribServer) AddSubscription(args *tribrpc.SubscriptionArgs, reply *tri
 	return nil
 }
 
+/*
+check if both values exist, then delete the sub
+*/
 func (ts *tribServer) RemoveSubscription(args *tribrpc.SubscriptionArgs, reply *tribrpc.SubscriptionReply) error {
-	
-	/*
-	check if both values exist, then delete the sub
-	*/
-	return errors.New("not implemented")
+	var thisUsrId string = args.UserID
+	var subscrId string = args.TargetUserID
+
+	//check if this user present in server
+	_,err := ts.libStore.Get(util.FormatUserKey(thisUsrId))
+
+	if(err != nil) {
+		//user not found
+		reply.Status = tribrpc.NoSuchUser
+		return err
+	}
+
+	//check if subscribe user is present
+	_,err = ts.libStore.Get(util.FormatUserKey(subscrId))
+
+	if(err != nil) {
+		reply.Status = tribrpc.NoSuchTargetUser
+		return err
+	}
+
+	//retrieve list of subsriber user IDs
+	err = ts.libStore.RemoveFromList(util.FormatSubListKey(thisUsrId),subscrId)
+
+	return err
 }
 
 func (ts *tribServer) GetSubscriptions(args *tribrpc.GetSubscriptionsArgs, reply *tribrpc.GetSubscriptionsReply) error {
 	/*
 	formatsublistkey
-	
 	*/
-	return errors.New("not implemented")
+	var thisUsrId string = args.UserID
+
+	//check if user present in server
+	_,err := ts.libStore.Get(util.FormatUserKey(thisUsrId))
+
+	if(err != nil) {
+		//user not found
+		reply.Status = tribrpc.NoSuchUser
+		return err
+	}
+
+	subscrList,err := ts.libStore.GetList(util.FormatSubListKey(thisUsrId))
+
+	if(err != nil) {
+		return err
+	}
+
+	reply.Status = tribrpc.OK
+	reply.UserIDs = subscrList
+	return nil
 }
 
 func (ts *tribServer) PostTribble(args *tribrpc.PostTribbleArgs, reply *tribrpc.PostTribbleReply) error {
