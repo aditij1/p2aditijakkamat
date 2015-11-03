@@ -129,11 +129,46 @@ func (ls *libstore) Get(key string) (string, error) {
 
 
 func (ls *libstore) Put(key, value string) error {
-	return errors.New("not implemented")
+	putArgs := storagerpc.PutArgs{
+		Key: key,
+		Value: value,
+	}
+
+	var reply storagerpc.PutReply
+
+	err := ls.masterServ.Call("StorageServer.Put", putArgs, &reply)
+
+	if(err != nil) {
+		return err
+	
+	} else if(reply.Status != storagerpc.OK) {
+
+		return errors.New("Reply status not Ok")
+	}
+
+	return nil
 }
 
+
 func (ls *libstore) Delete(key string) error {
-	return errors.New("not implemented")
+
+	delArgs := storagerpc.DeleteArgs{
+		Key: key,
+	}
+
+	var reply storagerpc.DeleteReply
+
+	err := ls.masterServ.Call("StorageServer.Delete", delArgs, &reply)
+
+	if(err != nil) {
+		return err
+	
+	} else if(reply.Status != storagerpc.OK) {
+		
+		return errors.New("Reply status not Ok")
+	}
+
+	return nil
 }
 
 func (ls *libstore) GetList(key string) ([]string, error) {
