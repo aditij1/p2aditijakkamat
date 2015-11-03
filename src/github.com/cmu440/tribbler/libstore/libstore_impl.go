@@ -3,7 +3,7 @@ package libstore
 import (
 	"errors"
 	"time"
-	"net"
+	//"net"
 	"net/rpc"
 	//"strconv"
 	"github.com/cmu440/tribbler/rpc/storagerpc"
@@ -54,9 +54,8 @@ type libstore struct {
 		each user is mapped to a key, and the key maps to a list of tribbles
 */
 func NewLibstore(masterServerHostPort, myHostPort string, mode LeaseMode) (Libstore, error) {
-	
-	masterServ, err := rpc.DialHTTP("tcp", 
-		net.JoinHostPort("localhost", masterServerHostPort))
+
+	masterServ, err := rpc.DialHTTP("tcp", masterServerHostPort)
 
 	if err != nil {
 		return nil, err
@@ -77,7 +76,7 @@ func NewLibstore(masterServerHostPort, myHostPort string, mode LeaseMode) (Libst
 			return nil,err
 
 		} else if(getServReply.Status != storagerpc.NotReady) {
-		
+
 			return nil, errors.New("Error!")
 		}
 
@@ -93,7 +92,7 @@ func NewLibstore(masterServerHostPort, myHostPort string, mode LeaseMode) (Libst
 		mode: mode,
 		hostPort: myHostPort,
 	}
-	
+
 	return &newLs, nil
 }
 
@@ -118,7 +117,7 @@ func (ls *libstore) Get(key string) (string, error) {
 
 	if(err != nil) {
 		return "",err
-	
+
 	} else if(reply.Status != storagerpc.OK) {
 
 		return "", errors.New("Reply status not Ok")
@@ -140,7 +139,7 @@ func (ls *libstore) Put(key, value string) error {
 
 	if(err != nil) {
 		return err
-	
+
 	} else if(reply.Status != storagerpc.OK) {
 
 		return errors.New("Reply status not Ok")
@@ -162,9 +161,9 @@ func (ls *libstore) Delete(key string) error {
 
 	if(err != nil) {
 		return err
-	
+
 	} else if(reply.Status != storagerpc.OK) {
-		
+
 		return errors.New("Reply status not Ok")
 	}
 
@@ -173,7 +172,7 @@ func (ls *libstore) Delete(key string) error {
 
 
 func (ls *libstore) GetList(key string) ([]string, error) {
-	
+
 	var wantLease bool = false
 
 	if(ls.mode == Never) {
@@ -193,7 +192,7 @@ func (ls *libstore) GetList(key string) ([]string, error) {
 
 	if(err != nil) {
 		return make([]string,0),err
-	
+
 	} else if(reply.Status != storagerpc.OK) {
 
 		return make([]string,0), errors.New("Reply status not Ok")
@@ -214,7 +213,7 @@ func (ls *libstore) RemoveFromList(key, removeItem string) error {
 
 	if(err != nil) {
 		return err
-	
+
 	} else if(reply.Status != storagerpc.OK) {
 
 		return errors.New("Reply status not Ok")
@@ -235,7 +234,7 @@ func (ls *libstore) AppendToList(key, newItem string) error {
 
 	if(err != nil) {
 		return err
-	
+
 	} else if(reply.Status != storagerpc.OK) {
 
 		return errors.New("Reply status not Ok")
