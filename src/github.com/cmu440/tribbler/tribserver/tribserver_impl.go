@@ -5,8 +5,9 @@ import (
 	"time"
 	"encoding/json"
 	"fmt"
-	//"net"
-	//"net/rpc"
+	"net"
+	"net/http"
+	"net/rpc"
 	"github.com/cmu440/tribbler/libstore"
 	//"github.com/cmu440/tribbler/rpc/storagerpc"
 	"github.com/cmu440/tribbler/rpc/tribrpc"
@@ -35,6 +36,21 @@ func NewTribServer(masterServerHostPort, myHostPort string) (TribServer, error) 
 		libStore: libStore,
 	}
 
+	err1 := rpc.RegisterName("TribServer", tribrpc.Wrap(&tribServ))
+	if err1 != nil {
+                fmt.Println(err1)
+                return nil, err1
+        }
+        rpc.HandleHTTP()
+        l, err2 := net.Listen("tcp", ":"+myHostPort)
+        if err2 != nil {
+                fmt.Println(err2)
+                return nil, err2
+        }
+        go http.Serve(l, nil)
+
+
+
 
 	return &tribServ, nil
 }
@@ -60,7 +76,7 @@ func (ts *tribServer) AddSubscription(args *tribrpc.SubscriptionArgs, reply *tri
 	-Check if user present
 	-Check if user being subscribed to is present
 	-append to list: sublist key formatter,
-	*/	
+	*/
 
 	var thisUsrId string = args.UserID
 	var subscrId string = args.TargetUserID
@@ -161,7 +177,7 @@ func (ts *tribServer) GetSubscriptions(args *tribrpc.GetSubscriptionsArgs, reply
 	-Add to the map from post key -> marshalled tribble
 	*/
 func (ts *tribServer) PostTribble(args *tribrpc.PostTribbleArgs, reply *tribrpc.PostTribbleReply) error {
-	
+
 	var thisUsrId string = args.UserID
 	var content string = args.Contents
 
@@ -226,14 +242,14 @@ func (ts *tribServer) DeleteTribble(args *tribrpc.DeleteTribbleArgs, reply *trib
 
 	//check if postKey is stored
 	_,err = ts.libStore.Get(postKey)
-	
+
 	if(err != nil) {
 		reply.Status = tribrpc.NoSuchPost
 		return err
 	}
 
 	errDelPost := ts.libStore.Delete(postKey)
-	errDelKey := 
+	errDelKey :=
 		ts.libStore.RemoveFromList(util.FormatTribListKey(usrID), postKey)
 
 	if(errDelPost != nil) {
@@ -251,8 +267,8 @@ func (ts *tribServer) DeleteTribble(args *tribrpc.DeleteTribbleArgs, reply *trib
 
 func (ts *tribServer) GetTribbles(args *tribrpc.GetTribblesArgs, reply *tribrpc.GetTribblesReply) error {
 	/*
-	-getList, formatTribListKey to get all the post keys 
-	-Slice it off at 100 
+	-getList, formatTribListKey to get all the post keys
+	-Slice it off at 100
 	-reverse it or wtv (if needed)
 	-Get() with that post key, and get the marshalled tribble
 	*/
