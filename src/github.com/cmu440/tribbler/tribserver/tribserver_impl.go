@@ -43,7 +43,7 @@ func NewTribServer(masterServerHostPort, myHostPort string) (TribServer, error) 
                 return nil, err1
         }
         rpc.HandleHTTP()
-        l, err2 := net.Listen("tcp", ":"+myHostPort)
+        l, err2 := net.Listen("tcp", myHostPort)
         if err2 != nil {
                 fmt.Println(err2)
                 return nil, err2
@@ -60,13 +60,22 @@ func (ts *tribServer) CreateUser(args *tribrpc.CreateUserArgs, reply *tribrpc.Cr
 
 	var usrID string = args.UserID
 
-	err := ts.libStore.Put(util.FormatUserKey(usrID), "exists")
+	_,err := ts.libStore.Get(util.FormatUserKey(usrID))
 
-	if(err != nil) {
-
-		return err
+	if(err == nil) {
+		//user not found
+		reply.Status = tribrpc.Exists
+		return nil
+		//return err
 	}
 
+	err = ts.libStore.Put(util.FormatUserKey(usrID), "exists")
+	
+	if(err != nil) {
+
+		return nil
+	}
+	
 	//populate reply struct
 	reply.Status = tribrpc.OK
 	return nil
@@ -88,7 +97,8 @@ func (ts *tribServer) AddSubscription(args *tribrpc.SubscriptionArgs, reply *tri
 	if(err != nil) {
 		//user not found
 		reply.Status = tribrpc.NoSuchUser
-		return err
+		//return nil
+		return nil
 	}
 
 	//check if subscribe user is present
@@ -96,14 +106,17 @@ func (ts *tribServer) AddSubscription(args *tribrpc.SubscriptionArgs, reply *tri
 
 	if(err != nil) {
 		reply.Status = tribrpc.NoSuchTargetUser
-		return err
+		//return nil
+		return nil
 	}
 
 	//add to list of subscribers
 	err = ts.libStore.AppendToList(util.FormatSubListKey(thisUsrId),subscrId)
 
 	if(err != nil) {
-		return err
+		//TODO after checkpoint, case on err
+		reply.Status = tribrpc.Exists
+		return nil
 	}
 
 	/* no error */
@@ -124,7 +137,8 @@ func (ts *tribServer) RemoveSubscription(args *tribrpc.SubscriptionArgs, reply *
 	if(err != nil) {
 		//user not found
 		reply.Status = tribrpc.NoSuchUser
-		return err
+		//return err
+		return nil
 	}
 
 	//check if subscribe user is present
@@ -132,14 +146,21 @@ func (ts *tribServer) RemoveSubscription(args *tribrpc.SubscriptionArgs, reply *
 
 	if(err != nil) {
 		reply.Status = tribrpc.NoSuchTargetUser
-		return err
+		//return err
+		return nil
 	}
 
 	//retrieve list of subsriber user IDs
 	err = ts.libStore.RemoveFromList(util.FormatSubListKey(thisUsrId),subscrId)
 
+	if(err != nil) {
+		//TODO after checkpoint, case on err
+		reply.Status = tribrpc.NoSuchTargetUser
+		return nil
+	}
+
 	reply.Status = tribrpc.OK
-	return err
+	return nil
 }
 
 func (ts *tribServer) GetSubscriptions(args *tribrpc.GetSubscriptionsArgs, reply *tribrpc.GetSubscriptionsReply) error {
@@ -154,19 +175,20 @@ func (ts *tribServer) GetSubscriptions(args *tribrpc.GetSubscriptionsArgs, reply
 	if(err != nil) {
 		//user not found
 		reply.Status = tribrpc.NoSuchUser
-		return err
+		//return err
+		return nil
 	}
 
 	subscrList,err := ts.libStore.GetList(util.FormatSubListKey(thisUsrId))
 
 	if(err != nil) {
-		return err
+		//return err
+		return nil
 	}
 
 	reply.Status = tribrpc.OK
 	reply.UserIDs = subscrList
 
-	reply.Status = tribrpc.OK
 	return nil
 }
 
@@ -191,7 +213,8 @@ func (ts *tribServer) PostTribble(args *tribrpc.PostTribbleArgs, reply *tribrpc.
 	if(err != nil) {
 		//user not found
 		reply.Status = tribrpc.NoSuchUser
-		return err
+		//return err
+		return nil
 	}
 
 	var timeNow time.Time = time.Now()
@@ -206,7 +229,7 @@ func (ts *tribServer) PostTribble(args *tribrpc.PostTribbleArgs, reply *tribrpc.
 
 	if(err != nil) {
 		fmt.Println("Error marshalling")
-		return err
+		//return err
 	}
 
 	var postKey string = util.FormatPostKey(thisUsrId,timeNow.Unix())
@@ -216,7 +239,7 @@ func (ts *tribServer) PostTribble(args *tribrpc.PostTribbleArgs, reply *tribrpc.
 
 	if(err != nil) {
 		fmt.Println("Error putting tribble contents")
-		return err
+		//return err
 	}
 
 	//store the postkey
@@ -224,7 +247,7 @@ func (ts *tribServer) PostTribble(args *tribrpc.PostTribbleArgs, reply *tribrpc.
 
 	if(err != nil) {
 		fmt.Println("Error putting postKey")
-		return err
+		//return err
 	}
 
 	reply.Status = tribrpc.OK
@@ -248,7 +271,7 @@ func (ts *tribServer) DeleteTribble(args *tribrpc.DeleteTribbleArgs, reply *trib
 	if(err != nil) {
 		//user not found
 		reply.Status = tribrpc.NoSuchUser
-		return err
+		return nil
 	}
 
 	//check if postKey is stored
@@ -256,7 +279,7 @@ func (ts *tribServer) DeleteTribble(args *tribrpc.DeleteTribbleArgs, reply *trib
 
 	if(err != nil) {
 		reply.Status = tribrpc.NoSuchPost
-		return err
+		return nil
 	}
 
 	errDelPost := ts.libStore.Delete(postKey)
@@ -265,12 +288,12 @@ func (ts *tribServer) DeleteTribble(args *tribrpc.DeleteTribbleArgs, reply *trib
 
 	if(errDelPost != nil) {
 		fmt.Println("Error deleting post")
-		return errDelPost
+		return nil
 	}
 
 	if(errDelKey != nil) {
 		fmt.Println("Error removing key from list")
-		return errDelKey
+		return nil
 	}
 
 	reply.Status = tribrpc.OK
@@ -293,23 +316,29 @@ func (ts *tribServer) GetTribbles(args *tribrpc.GetTribblesArgs, reply *tribrpc.
 	if(err != nil) {
 		//user not found
 		reply.Status = tribrpc.NoSuchUser
-		return err
+		return nil
 	}
 
 	postKeysList,err := ts.libStore.GetList(util.FormatTribListKey(usrID))
 
 	if(err != nil) {
 		fmt.Println("Could not get list of postKeys for user")
-		return err
+
+		reply.Status = tribrpc.OK
+		reply.Tribbles = make([]tribrpc.Tribble,0)
+		return nil
 	}
 
 	//min(100, length of slice)
 	var sliceSize int = int(math.Min(float64(len(postKeysList)),100))
 
+
 	//create new list of tribbles
 	tribList := make([]tribrpc.Tribble,sliceSize)
 
-	for idx,currKey := range(postKeysList[:sliceSize]) {
+	for i := 0; i<sliceSize; i++ { 
+
+		currKey := postKeysList[len(postKeysList)-i-1]
 
 		marshalStr,err := ts.libStore.Get(currKey)
 		
@@ -325,7 +354,7 @@ func (ts *tribServer) GetTribbles(args *tribrpc.GetTribblesArgs, reply *tribrpc.
 				fmt.Println("Error Unmarshalling")
 
 			} else {
-				tribList[idx] = currTrib
+				tribList[i] = currTrib
 			}
 		}
 	}
