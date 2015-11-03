@@ -5,6 +5,7 @@ import (
 	"time"
 	"encoding/json"
 	"fmt"
+	"math"
 	//"net"
 	//"net/rpc"
 	"github.com/cmu440/tribbler/libstore"
@@ -121,6 +122,7 @@ func (ts *tribServer) RemoveSubscription(args *tribrpc.SubscriptionArgs, reply *
 	//retrieve list of subsriber user IDs
 	err = ts.libStore.RemoveFromList(util.FormatSubListKey(thisUsrId),subscrId)
 
+	reply.Status = tribrpc.OK
 	return err
 }
 
@@ -147,6 +149,8 @@ func (ts *tribServer) GetSubscriptions(args *tribrpc.GetSubscriptionsArgs, reply
 
 	reply.Status = tribrpc.OK
 	reply.UserIDs = subscrList
+
+	reply.Status = tribrpc.OK
 	return nil
 }
 
@@ -174,19 +178,25 @@ func (ts *tribServer) PostTribble(args *tribrpc.PostTribbleArgs, reply *tribrpc.
 		return err
 	}
 
-	var timeNow int64 = time.Now().Unix()
+	var timeNow time.Time = time.Now()
 
-	marshalContent, err := json.Marshal(&content)
+	newTribble := tribrpc.Tribble{
+		UserID: thisUsrId,
+		Posted: timeNow,
+		Contents: content,
+	}
+
+	marshalTrib, err := json.Marshal(&newTribble)
 
 	if(err != nil) {
 		fmt.Println("Error marshalling")
 		return err
 	}
 
-	var postKey string = util.FormatPostKey(thisUsrId,timeNow)
+	var postKey string = util.FormatPostKey(thisUsrId,timeNow.Unix())
 
-	//store the tribble contents
-	err = ts.libStore.Put(postKey, string(marshalContent))
+	//store the tribble itself
+	err = ts.libStore.Put(postKey, string(marshalTrib))
 
 	if(err != nil) {
 		fmt.Println("Error putting tribble contents")
@@ -201,6 +211,7 @@ func (ts *tribServer) PostTribble(args *tribrpc.PostTribbleArgs, reply *tribrpc.
 		return err
 	}
 
+	reply.Status = tribrpc.OK
 	return nil
 }
 
@@ -246,17 +257,67 @@ func (ts *tribServer) DeleteTribble(args *tribrpc.DeleteTribbleArgs, reply *trib
 		return errDelKey
 	}
 
+	reply.Status = tribrpc.OK
 	return nil
 }
 
-func (ts *tribServer) GetTribbles(args *tribrpc.GetTribblesArgs, reply *tribrpc.GetTribblesReply) error {
-	/*
+/*
 	-getList, formatTribListKey to get all the post keys 
 	-Slice it off at 100 
 	-reverse it or wtv (if needed)
 	-Get() with that post key, and get the marshalled tribble
 	*/
-	return errors.New("not implemented")
+func (ts *tribServer) GetTribbles(args *tribrpc.GetTribblesArgs, reply *tribrpc.GetTribblesReply) error {
+
+	var usrID string = args.UserID
+
+	//check if user present in server
+	_,err := ts.libStore.Get(util.FormatUserKey(usrID))
+
+	if(err != nil) {
+		//user not found
+		reply.Status = tribrpc.NoSuchUser
+		return err
+	}
+
+	postKeysList,err := ts.libStore.GetList(util.FormatTribListKey(usrID))
+
+	if(err != nil) {
+		fmt.Println("Could not get list of postKeys for user")
+		return err
+	}
+
+	//min(100, length of slice)
+	var sliceSize int = int(math.Min(float64(len(postKeysList)),100))
+
+	//create new list of tribbles
+	tribList := make([]tribrpc.Tribble,sliceSize)
+
+	for idx,currKey := range(postKeysList[:sliceSize]) {
+
+		marshalStr,err := ts.libStore.Get(currKey)
+		
+		if(err != nil) {
+			fmt.Println("Error retrieving currKey")
+		
+		} else {
+
+			var currTrib tribrpc.Tribble
+			err = json.Unmarshal([]byte(marshalStr), &currTrib)
+
+			if(err != nil) {
+				fmt.Println("Error Unmarshalling")
+
+			} else {
+				tribList[idx] = currTrib
+			}
+		}
+	}
+
+	reply.Status = tribrpc.OK
+	reply.Tribbles = tribList
+
+	return nil
 }
 
 func (ts *tribServer) GetTribblesBySubscription(args *tribrpc.GetTribblesArgs, reply *tribrpc.GetTribblesReply) error {
