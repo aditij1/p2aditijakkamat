@@ -43,7 +43,6 @@ func NewStorageServer(masterServerHostPort string, numNodes, port int, nodeID ui
 		mu:              &sync.Mutex{}}
 	server.mu.Lock()
 	defer server.mu.Unlock()
-
 	err1 := rpc.RegisterName("StorageServer", storagerpc.Wrap(&server))
 	if err1 != nil {
 		fmt.Println(err1)
@@ -57,7 +56,7 @@ func NewStorageServer(masterServerHostPort string, numNodes, port int, nodeID ui
 	}
 	go http.Serve(l, nil)
 
-	if masterServerHostPort != "" { // Server is a master
+	if masterServerHostPort == "" { // Server is a master
 		server.servers[server.nextNode] = server.node
 		server.nextNode++
 		if numNodes == 1 {
@@ -132,6 +131,7 @@ func (ss *storageServer) GetServers(args *storagerpc.GetServersArgs, reply *stor
 }
 
 func (ss *storageServer) Get(args *storagerpc.GetArgs, reply *storagerpc.GetReply) error {
+	fmt.Println("Entered storage server get")
 	ss.mu.Lock()
 	defer ss.mu.Unlock()
 	val, ok := ss.dataStore[args.Key]
@@ -146,6 +146,7 @@ func (ss *storageServer) Get(args *storagerpc.GetArgs, reply *storagerpc.GetRepl
 }
 
 func (ss *storageServer) Delete(args *storagerpc.DeleteArgs, reply *storagerpc.DeleteReply) error {
+	fmt.Println("Entered storageserver delete")
 	ss.mu.Lock()
 	defer ss.mu.Unlock()
 	_, ok := ss.dataStore[args.Key]
@@ -169,6 +170,7 @@ func ListToSlice(list *list.List) []string {
 }
 
 func (ss *storageServer) GetList(args *storagerpc.GetArgs, reply *storagerpc.GetListReply) error {
+	fmt.Println("Entered storageserver GetList")
 	ss.mu.Lock()
 	defer ss.mu.Unlock()
 	val, ok := ss.dataStore[args.Key]
@@ -183,6 +185,7 @@ func (ss *storageServer) GetList(args *storagerpc.GetArgs, reply *storagerpc.Get
 }
 
 func (ss *storageServer) Put(args *storagerpc.PutArgs, reply *storagerpc.PutReply) error {
+	fmt.Println("Entered storageserver Put")
 	ss.mu.Lock()
 	defer ss.mu.Unlock()
 	ss.dataStore[args.Key] = args.Value
@@ -191,6 +194,7 @@ func (ss *storageServer) Put(args *storagerpc.PutArgs, reply *storagerpc.PutRepl
 }
 
 func (ss *storageServer) AppendToList(args *storagerpc.PutArgs, reply *storagerpc.PutReply) error {
+	fmt.Println("Entered storageserver AppendToList")
 	ss.mu.Lock()
 	defer ss.mu.Unlock()
 	val, ok := ss.dataStore[args.Key]
@@ -199,7 +203,15 @@ func (ss *storageServer) AppendToList(args *storagerpc.PutArgs, reply *storagerp
 		l.PushBack(args.Value)
 		ss.dataStore[args.Key] = l
 	} else {
-		listVal := val.(list.List)
+		// Check if element is already in list
+		listVal := val.(*list.List)
+		for e := listVal.Front(); e != nil; e = e.Next() {
+			if args.Value == e.Value.(string) {
+				reply.Status = storagerpc.ItemExists
+				return nil
+			}
+		}
+		fmt.Println("Casted interface to list")
 		listVal.PushBack(args.Value)
 	}
 	reply.Status = storagerpc.OK
@@ -207,15 +219,21 @@ func (ss *storageServer) AppendToList(args *storagerpc.PutArgs, reply *storagerp
 }
 
 func (ss *storageServer) RemoveFromList(args *storagerpc.PutArgs, reply *storagerpc.PutReply) error {
-	ss.mu.Unlock()
+	fmt.Println("Entered storageserver RemoveFromList")
+	ss.mu.Lock()
 	defer ss.mu.Unlock()
 	val, ok := ss.dataStore[args.Key]
+	fmt.Println("Checked the dataStore")
 	if !ok {
+		fmt.Println("!ok in RemoveFromList")
 		reply.Status = storagerpc.KeyNotFound
 		return nil
 	} else {
-		listVal := val.(list.List)
+		listVal := val.(*list.List)
+		fmt.Println("casted to list")
+		fmt.Println("About to iterate through list")
 		for e := listVal.Front(); e != nil; e = e.Next() {
+			fmt.Println("Iterating through list")
 			if args.Value == e.Value.(string) {
 				reply.Status = storagerpc.OK
 				listVal.Remove(e)
