@@ -204,16 +204,49 @@ func (ts *tribServer) PostTribble(args *tribrpc.PostTribbleArgs, reply *tribrpc.
 	return nil
 }
 
-
-func (ts *tribServer) DeleteTribble(args *tribrpc.DeleteTribbleArgs, reply *tribrpc.DeleteTribbleReply) error {
-	/*
+/*
 	2 deletes:
 	-remove the tribble itself
 	-remove the postkey
 	*/
 
+func (ts *tribServer) DeleteTribble(args *tribrpc.DeleteTribbleArgs, reply *tribrpc.DeleteTribbleReply) error {
 
-	return errors.New("not implemented")
+	var usrID string = args.UserID
+	var postKey string = args.PostKey
+
+	//check if user present in server
+	_,err := ts.libStore.Get(util.FormatUserKey(usrID))
+
+	if(err != nil) {
+		//user not found
+		reply.Status = tribrpc.NoSuchUser
+		return err
+	}
+
+	//check if postKey is stored
+	_,err = ts.libStore.Get(postKey)
+	
+	if(err != nil) {
+		reply.Status = tribrpc.NoSuchPost
+		return err
+	}
+
+	errDelPost := ts.libStore.Delete(postKey)
+	errDelKey := 
+		ts.libStore.RemoveFromList(util.FormatTribListKey(usrID), postKey)
+
+	if(errDelPost != nil) {
+		fmt.Println("Error deleting post")
+		return errDelPost
+	}
+
+	if(errDelKey != nil) {
+		fmt.Println("Error removing key from list")
+		return errDelKey
+	}
+
+	return nil
 }
 
 func (ts *tribServer) GetTribbles(args *tribrpc.GetTribblesArgs, reply *tribrpc.GetTribblesReply) error {
