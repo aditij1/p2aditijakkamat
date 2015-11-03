@@ -2,6 +2,9 @@ package tribserver
 
 import (
 	"errors"
+	"time"
+	"encoding/json"
+	"fmt"
 	//"net"
 	//"net/rpc"
 	"github.com/cmu440/tribbler/libstore"
@@ -147,8 +150,7 @@ func (ts *tribServer) GetSubscriptions(args *tribrpc.GetSubscriptionsArgs, reply
 	return nil
 }
 
-func (ts *tribServer) PostTribble(args *tribrpc.PostTribbleArgs, reply *tribrpc.PostTribbleReply) error {
-	/*
+/*
 	-Check if user is present
 	-Create the tribble
 	-timestamp: go time
@@ -157,10 +159,49 @@ func (ts *tribServer) PostTribble(args *tribrpc.PostTribbleArgs, reply *tribrpc.
 
 	-Appendto list that post key to the usrID
 	-Add to the map from post key -> marshalled tribble
-
 	*/
+func (ts *tribServer) PostTribble(args *tribrpc.PostTribbleArgs, reply *tribrpc.PostTribbleReply) error {
+	
+	var thisUsrId string = args.UserID
+	var content string = args.Contents
 
-	return errors.New("not implemented")
+	//check if user present in server
+	_,err := ts.libStore.Get(util.FormatUserKey(thisUsrId))
+
+	if(err != nil) {
+		//user not found
+		reply.Status = tribrpc.NoSuchUser
+		return err
+	}
+
+	var timeNow int64 = time.Now().Unix()
+
+	marshalContent, err := json.Marshal(&content)
+
+	if(err != nil) {
+		fmt.Println("Error marshalling")
+		return err
+	}
+
+	var postKey string = util.FormatPostKey(thisUsrId,timeNow)
+
+	//store the tribble contents
+	err = ts.libStore.Put(postKey, string(marshalContent))
+
+	if(err != nil) {
+		fmt.Println("Error putting tribble contents")
+		return err
+	}
+
+	//store the postkey
+	err = ts.libStore.AppendToList(util.FormatTribListKey(thisUsrId),postKey)
+
+	if(err != nil) {
+		fmt.Println("Error putting postKey")
+		return err
+	}
+
+	return nil
 }
 
 
@@ -170,6 +211,8 @@ func (ts *tribServer) DeleteTribble(args *tribrpc.DeleteTribbleArgs, reply *trib
 	-remove the tribble itself
 	-remove the postkey
 	*/
+
+
 	return errors.New("not implemented")
 }
 
