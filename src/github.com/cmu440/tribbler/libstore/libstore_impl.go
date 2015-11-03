@@ -11,6 +11,10 @@ import (
 
 type libstore struct {
 	masterServ *rpc.Client
+	allServers [] storagerpc.Node
+	mode LeaseMode
+	hostPort string
+
 }
 
 // NewLibstore creates a new instance of a TribServer's libstore. masterServerHostPort
@@ -85,13 +89,10 @@ func NewLibstore(masterServerHostPort, myHostPort string, mode LeaseMode) (Libst
 
 	var newLs libstore = libstore {
 		masterServ: masterServ,
+		allServers: getServReply.Servers,
+		mode: mode,
+		hostPort: myHostPort,
 	}
-
-	/*
-	TODO:
-	-Get list of all available servers
-
-	*/
 	
 	return &newLs, nil
 }
@@ -99,8 +100,33 @@ func NewLibstore(masterServerHostPort, myHostPort string, mode LeaseMode) (Libst
 
 func (ls *libstore) Get(key string) (string, error) {
 
-	return "", errors.New("not implemented")
+	var wantLease bool = false
+	if(ls.mode == Never) {
+		wantLease = false
+	}
+	//TODO else clause after checkpoint
+
+	getArgs := storagerpc.GetArgs{
+		Key: key,
+		WantLease: wantLease,
+		HostPort: ls.hostPort,
+	}
+
+	var reply storagerpc.GetReply
+
+	err := ls.masterServ.Call("StorageServer.Get", getArgs, &reply)
+
+	if(err != nil) {
+		return "",err
+	
+	} else if(reply.Status != storagerpc.OK) {
+
+		return "", errors.New("Reply status not Ok")
+	}
+
+	return reply.Value,nil
 }
+
 
 func (ls *libstore) Put(key, value string) error {
 	return errors.New("not implemented")
