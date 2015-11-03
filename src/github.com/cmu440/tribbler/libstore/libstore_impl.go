@@ -2,7 +2,10 @@ package libstore
 
 import (
 	"errors"
-
+	"time"
+	"net"
+	"net/rpc"
+	//"strconv"
 	"github.com/cmu440/tribbler/rpc/storagerpc"
 )
 
@@ -49,22 +52,53 @@ type libstore struct {
 func NewLibstore(masterServerHostPort, myHostPort string, mode LeaseMode) (Libstore, error) {
 	
 	masterServ, err := rpc.DialHTTP("tcp", 
-		net.JoinHostPort("localhost", strconv.Itoa(masterServerHostPort)))
+		net.JoinHostPort("localhost", masterServerHostPort))
 
 	if err != nil {
 		return nil, err
 	}
 
-	var newLs Libstore = libstore {
-		masterServ: masterServ
+	getServArgs := storagerpc.GetServersArgs{}
+	//declare empty struct to store return
+	var getServReply storagerpc.GetServersReply
+
+	for {
+		err = masterServ.Call("StorageServer.GetServers", getServArgs, &getServReply)
+
+		if(err == nil) {
+			break
+		}
+
+		if(err != nil) {
+			return nil,err
+
+		} else if(getServReply.Status != storagerpc.NotReady) {
+		
+			return nil, errors.New("Error!")
+		}
+
+		//retry every second
+		timer := time.NewTimer(time.Second * 1)
+		<-timer.C
 	}
+
+
+	var newLs libstore = libstore {
+		masterServ: masterServ,
+	}
+
+	/*
+	TODO:
+	-Get list of all available servers
+
+	*/
 	
 	return &newLs, nil
 }
 
 
 func (ls *libstore) Get(key string) (string, error) {
-	
+
 	return "", errors.New("not implemented")
 }
 
