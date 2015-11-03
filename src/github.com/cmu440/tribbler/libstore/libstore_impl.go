@@ -171,16 +171,77 @@ func (ls *libstore) Delete(key string) error {
 	return nil
 }
 
+
 func (ls *libstore) GetList(key string) ([]string, error) {
-	return nil, errors.New("not implemented")
+	
+	var wantLease bool = false
+
+	if(ls.mode == Never) {
+		wantLease = false
+	}
+	//TODO else clause after checkpoint
+
+	getArgs := storagerpc.GetArgs{
+		Key: key,
+		WantLease: wantLease,
+		HostPort: ls.hostPort,
+	}
+
+	var reply storagerpc.GetListReply
+
+	err := ls.masterServ.Call("StorageServer.GetList", getArgs, &reply)
+
+	if(err != nil) {
+		return make([]string,0),err
+	
+	} else if(reply.Status != storagerpc.OK) {
+
+		return make([]string,0), errors.New("Reply status not Ok")
+	}
+
+	return reply.Value,nil
 }
 
 func (ls *libstore) RemoveFromList(key, removeItem string) error {
-	return errors.New("not implemented")
+	putArgs := storagerpc.PutArgs{
+		Key: key,
+		Value: removeItem,
+	}
+
+	var reply storagerpc.PutReply
+
+	err := ls.masterServ.Call("StorageServer.RemoveFromList", putArgs, &reply)
+
+	if(err != nil) {
+		return err
+	
+	} else if(reply.Status != storagerpc.OK) {
+
+		return errors.New("Reply status not Ok")
+	}
+
+	return nil
 }
 
 func (ls *libstore) AppendToList(key, newItem string) error {
-	return errors.New("not implemented")
+	putArgs := storagerpc.PutArgs{
+		Key: key,
+		Value: newItem,
+	}
+
+	var reply storagerpc.PutReply
+
+	err := ls.masterServ.Call("StorageServer.AppendToList", putArgs, &reply)
+
+	if(err != nil) {
+		return err
+	
+	} else if(reply.Status != storagerpc.OK) {
+
+		return errors.New("Reply status not Ok")
+	}
+
+	return nil
 }
 
 func (ls *libstore) RevokeLease(args *storagerpc.RevokeLeaseArgs, reply *storagerpc.RevokeLeaseReply) error {
