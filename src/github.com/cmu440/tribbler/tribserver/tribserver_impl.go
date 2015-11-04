@@ -1,7 +1,6 @@
 package tribserver
 
 import (
-	"errors"
 	"time"
 	"encoding/json"
 	"fmt"
@@ -329,9 +328,15 @@ func (ts *tribServer) GetTribbles(args *tribrpc.GetTribblesArgs, reply *tribrpc.
 		return nil
 	}
 
+	reply.Status = tribrpc.OK
+	reply.Tribbles = ts.getTribbleList(postKeysList)
+
+	return nil
+}
+
+func (ts *tribServer) getTribbleList(postKeysList []string) []tribrpc.Tribble {
 	//min(100, length of slice)
 	var sliceSize int = int(math.Min(float64(len(postKeysList)),100))
-
 
 	//create new list of tribbles
 	tribList := make([]tribrpc.Tribble,sliceSize)
@@ -359,15 +364,36 @@ func (ts *tribServer) GetTribbles(args *tribrpc.GetTribblesArgs, reply *tribrpc.
 		}
 	}
 
-	reply.Status = tribrpc.OK
-	reply.Tribbles = tribList
-
-	return nil
+	return tribList
 }
 
+/*
+-format sublist
+*/
 func (ts *tribServer) GetTribblesBySubscription(args *tribrpc.GetTribblesArgs, reply *tribrpc.GetTribblesReply) error {
-	/*
-	-format sublist
-	*/
-	return errors.New("not implemented")
+
+	var usrID string = args.UserID
+
+	//check if user present in server
+	_,err := ts.libStore.Get(util.FormatUserKey(usrID))
+
+	if(err != nil) {
+		//user not found
+		reply.Status = tribrpc.NoSuchUser
+		return nil
+	}
+
+	//get list of subscribers
+	subscrList,err = ts.libStore.GetList(util.FormatSubListKey(usrID))
+
+	if(err != nil) {
+		//return err
+		return nil
+	}
+
+
+
+	reply.Status = tribrpc.OK
+	return nil
+
 }

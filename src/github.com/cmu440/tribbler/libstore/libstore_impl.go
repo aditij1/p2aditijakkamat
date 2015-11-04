@@ -142,7 +142,6 @@ func (ls *libstore) Put(key, value string) error {
 
 	} else if(reply.Status != storagerpc.OK) {
 
-		if(reply.Status == storagerpc.)
 		return errors.New("Reply status not Ok")
 	}
 
