@@ -41,8 +41,9 @@ func NewStorageServer(masterServerHostPort string, numNodes, port int, nodeID ui
 		node:            storagerpc.Node{HostPort: net.JoinHostPort("localhost", strconv.Itoa(port)), NodeID: nodeID},
 		dataStore:       make(map[string]interface{}),
 		mu:              &sync.Mutex{}}
-	server.mu.Lock()
-	defer server.mu.Unlock()
+	//server.mu.Lock()
+	//defer server.mu.Unlock()
+
 	err1 := rpc.RegisterName("StorageServer", storagerpc.Wrap(&server))
 	if err1 != nil {
 		fmt.Println(err1)
@@ -106,8 +107,7 @@ func (ss *storageServer) RegisterServer(args *storagerpc.RegisterArgs, reply *st
 		ss.servers[ss.nextNode] = node
 		ss.nextNode++
 	}
-
-	if cap(ss.servers) == 0 {
+	if ss.nextNode == ss.numNodes {
 		reply.Status = storagerpc.OK
 		reply.Servers = ss.servers
 		ss.allServersReady <- 1
@@ -121,7 +121,7 @@ func (ss *storageServer) RegisterServer(args *storagerpc.RegisterArgs, reply *st
 func (ss *storageServer) GetServers(args *storagerpc.GetServersArgs, reply *storagerpc.GetServersReply) error {
 	ss.mu.Lock()
 	defer ss.mu.Unlock()
-	if cap(ss.servers) == 0 {
+	if ss.nextNode == ss.numNodes {
 		reply.Status = storagerpc.OK
 		reply.Servers = ss.servers
 	} else {
