@@ -2,19 +2,18 @@ package libstore
 
 import (
 	"errors"
-	"time"
 	"fmt"
 	"net/rpc"
+	"time"
 	//"strconv"
 	"github.com/cmu440/tribbler/rpc/storagerpc"
 )
 
 type libstore struct {
 	masterServ *rpc.Client
-	allServers [] storagerpc.Node
-	mode LeaseMode
-	hostPort string
-
+	allServers []storagerpc.Node
+	mode       LeaseMode
+	hostPort   string
 }
 
 // NewLibstore creates a new instance of a TribServer's libstore. masterServerHostPort
@@ -42,16 +41,15 @@ type libstore struct {
 // need to create a brand new HTTP handler to serve the requests (the Libstore may
 // simply reuse the TribServer's HTTP handler since the two run in the same process).
 
-
 /**
-	Libstore deals with rerouting
+Libstore deals with rerouting
 
 
-	-Ask for servers until responds without error
-	-Is responsible for asking thr correct server
+-Ask for servers until responds without error
+-Is responsible for asking thr correct server
 
-	-StorageServer trick:
-		each user is mapped to a key, and the key maps to a list of tribbles
+-StorageServer trick:
+	each user is mapped to a key, and the key maps to a list of tribbles
 */
 func NewLibstore(masterServerHostPort, myHostPort string, mode LeaseMode) (Libstore, error) {
 
@@ -68,14 +66,14 @@ func NewLibstore(masterServerHostPort, myHostPort string, mode LeaseMode) (Libst
 	for {
 		err = masterServ.Call("StorageServer.GetServers", getServArgs, &getServReply)
 
-		if(err == nil) {
+		if err == nil {
 			break
 		}
 
-		if(err != nil) {
-			return nil,err
+		if err != nil {
+			return nil, err
 
-		} else if(getServReply.Status != storagerpc.NotReady) {
+		} else if getServReply.Status != storagerpc.NotReady {
 
 			return nil, errors.New("Error!")
 		}
@@ -85,52 +83,49 @@ func NewLibstore(masterServerHostPort, myHostPort string, mode LeaseMode) (Libst
 		<-timer.C
 	}
 
-
-	var newLs libstore = libstore {
+	var newLs libstore = libstore{
 		masterServ: masterServ,
 		allServers: getServReply.Servers,
-		mode: mode,
-		hostPort: myHostPort,
+		mode:       mode,
+		hostPort:   myHostPort,
 	}
 
 	return &newLs, nil
 }
 
-
 func (ls *libstore) Get(key string) (string, error) {
 
 	var wantLease bool = false
-	if(ls.mode == Never) {
+	if ls.mode == Never {
 		wantLease = false
 	}
 	//TODO else clause after checkpoint
 
 	getArgs := storagerpc.GetArgs{
-		Key: key,
+		Key:       key,
 		WantLease: wantLease,
-		HostPort: ls.hostPort,
+		HostPort:  ls.hostPort,
 	}
 
 	var reply storagerpc.GetReply
 
 	err := ls.masterServ.Call("StorageServer.Get", getArgs, &reply)
 
-	if(err != nil) {
+	if err != nil {
 		fmt.Println("LibStore Get: Error")
-		return "",err
+		return "", err
 
-	} else if(reply.Status != storagerpc.OK) {
+	} else if reply.Status != storagerpc.OK {
 		fmt.Println("LibStore Get: Error")
 		return "", errors.New("Reply status not Ok")
 	}
 
-	return reply.Value,nil
+	return reply.Value, nil
 }
-
 
 func (ls *libstore) Put(key, value string) error {
 	putArgs := storagerpc.PutArgs{
-		Key: key,
+		Key:   key,
 		Value: value,
 	}
 
@@ -138,17 +133,16 @@ func (ls *libstore) Put(key, value string) error {
 
 	err := ls.masterServ.Call("StorageServer.Put", putArgs, &reply)
 
-	if(err != nil) {
+	if err != nil {
 		return err
 
-	} else if(reply.Status != storagerpc.OK) {
+	} else if reply.Status != storagerpc.OK {
 
 		return errors.New("Reply status not Ok")
 	}
 
 	return nil
 }
-
 
 func (ls *libstore) Delete(key string) error {
 
@@ -160,11 +154,11 @@ func (ls *libstore) Delete(key string) error {
 
 	err := ls.masterServ.Call("StorageServer.Delete", delArgs, &reply)
 
-	if(err != nil) {
+	if err != nil {
 		fmt.Println("LibStore Delete: ")
 		return err
 
-	} else if(reply.Status != storagerpc.OK) {
+	} else if reply.Status != storagerpc.OK {
 
 		return errors.New("Reply status not Ok")
 	}
@@ -172,40 +166,39 @@ func (ls *libstore) Delete(key string) error {
 	return nil
 }
 
-
 func (ls *libstore) GetList(key string) ([]string, error) {
 
 	var wantLease bool = false
 
-	if(ls.mode == Never) {
+	if ls.mode == Never {
 		wantLease = false
 	}
 	//TODO else clause after checkpoint
 
 	getArgs := storagerpc.GetArgs{
-		Key: key,
+		Key:       key,
 		WantLease: wantLease,
-		HostPort: ls.hostPort,
+		HostPort:  ls.hostPort,
 	}
 
 	var reply storagerpc.GetListReply
 
 	err := ls.masterServ.Call("StorageServer.GetList", getArgs, &reply)
 
-	if(err != nil) {
-		return make([]string,0),err
+	if err != nil {
+		return make([]string, 0), err
 
-	} else if(reply.Status != storagerpc.OK) {
+	} else if reply.Status != storagerpc.OK {
 
-		return make([]string,0), errors.New("Reply status not Ok")
+		return make([]string, 0), errors.New("Reply status not Ok")
 	}
 
-	return reply.Value,nil
+	return reply.Value, nil
 }
 
 func (ls *libstore) RemoveFromList(key, removeItem string) error {
 	putArgs := storagerpc.PutArgs{
-		Key: key,
+		Key:   key,
 		Value: removeItem,
 	}
 
@@ -213,10 +206,10 @@ func (ls *libstore) RemoveFromList(key, removeItem string) error {
 
 	err := ls.masterServ.Call("StorageServer.RemoveFromList", putArgs, &reply)
 
-	if(err != nil) {
+	if err != nil {
 		return err
 
-	} else if(reply.Status != storagerpc.OK) {
+	} else if reply.Status != storagerpc.OK {
 
 		return errors.New("Reply status not Ok")
 	}
@@ -226,7 +219,7 @@ func (ls *libstore) RemoveFromList(key, removeItem string) error {
 
 func (ls *libstore) AppendToList(key, newItem string) error {
 	putArgs := storagerpc.PutArgs{
-		Key: key,
+		Key:   key,
 		Value: newItem,
 	}
 
@@ -234,11 +227,11 @@ func (ls *libstore) AppendToList(key, newItem string) error {
 
 	err := ls.masterServ.Call("StorageServer.AppendToList", putArgs, &reply)
 
-	if(err != nil) {
+	if err != nil {
 		fmt.Println("Libstore AppendToList: Error")
 		return nil
 
-	} else if(reply.Status != storagerpc.OK) {
+	} else if reply.Status != storagerpc.OK {
 
 		return errors.New("Reply status not Ok")
 	}
