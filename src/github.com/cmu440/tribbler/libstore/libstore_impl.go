@@ -3,7 +3,7 @@ package libstore
 import (
 	"errors"
 	"time"
-	//"net"
+	"fmt"
 	"net/rpc"
 	//"strconv"
 	"github.com/cmu440/tribbler/rpc/storagerpc"
@@ -233,7 +233,8 @@ func (ls *libstore) AppendToList(key, newItem string) error {
 	err := ls.masterServ.Call("StorageServer.AppendToList", putArgs, &reply)
 
 	if(err != nil) {
-		return err
+		fmt.Println("Libstore AppendToList: Error")
+		return nil
 
 	} else if(reply.Status != storagerpc.OK) {
 

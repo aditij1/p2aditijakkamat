@@ -3,15 +3,16 @@ package tribserver
 import (
 	"time"
 	"encoding/json"
+	"strings"
+	"strconv"
 	"fmt"
 	"math"
+	"sort"
 	"net"
 	"net/http"
 	"net/rpc"
 	"github.com/cmu440/tribbler/libstore"
-	//"github.com/cmu440/tribbler/rpc/storagerpc"
 	"github.com/cmu440/tribbler/rpc/tribrpc"
-	//"github.com/cmu440/tribbler/rpc/librpc"
 	"github.com/cmu440/tribbler/util"
 )
 
@@ -231,7 +232,7 @@ func (ts *tribServer) PostTribble(args *tribrpc.PostTribbleArgs, reply *tribrpc.
 		//return err
 	}
 
-	var postKey string = util.FormatPostKey(thisUsrId,timeNow.Unix())
+	var postKey string = util.FormatPostKey(thisUsrId,timeNow.UnixNano())
 
 	//store the tribble itself
 	err = ts.libStore.Put(postKey, string(marshalTrib))
@@ -322,7 +323,7 @@ func (ts *tribServer) GetTribbles(args *tribrpc.GetTribblesArgs, reply *tribrpc.
 
 	if(err != nil) {
 		fmt.Println("Could not get list of postKeys for user")
-
+		//return empty tribble list, as the list is not yet created (0 tribbles)
 		reply.Status = tribrpc.OK
 		reply.Tribbles = make([]tribrpc.Tribble,0)
 		return nil
@@ -367,12 +368,45 @@ func (ts *tribServer) getTribbleList(postKeysList []string) []tribrpc.Tribble {
 	return tribList
 }
 
+//defining type for sorting
+type PostByTime []string
+
+func (pkSlice PostByTime) Len() int {
+	return len(pkSlice)
+}
+
+func (pkSlice PostByTime) Swap(i,j int) {
+	pkSlice[i],pkSlice[j] = pkSlice[j],pkSlice[i]
+}
+
+func (pkSlice PostByTime) Less(i,j int) bool {
+	fmt.Println("postKey to parse: ", pkSlice[i])
+	var key1 []string = strings.Split(pkSlice[i],"_")
+	var key2 []string = strings.Split(pkSlice[j],"_")
+
+
+	//fmt.Println("Attempting to parse:",  key1[1]  + 
+	//	", " + key2[1])
+	time1,err1 := strconv.ParseInt(key1[1],16,64)
+	time2,err2 := strconv.ParseInt(key2[1],16,64)
+
+	if(err1 != nil || err2 != nil) {
+		fmt.Println("Error parsing int!")
+	}
+
+	//reverse chronological order?
+	//fmt.Printf("%V < %V : %V\n", time1, time2, (time1 < time2))
+	return time1 < time2
+}
+
 /*
 -format sublist
 */
 func (ts *tribServer) GetTribblesBySubscription(args *tribrpc.GetTribblesArgs, reply *tribrpc.GetTribblesReply) error {
 
+	
 	var usrID string = args.UserID
+
 
 	//check if user present in server
 	_,err := ts.libStore.Get(util.FormatUserKey(usrID))
@@ -384,16 +418,41 @@ func (ts *tribServer) GetTribblesBySubscription(args *tribrpc.GetTribblesArgs, r
 	}
 
 	//get list of subscribers
-	subscrList,err = ts.libStore.GetList(util.FormatSubListKey(usrID))
+	subscrList,err := ts.libStore.GetList(util.FormatSubListKey(usrID))
 
 	if(err != nil) {
 		//return err
+		fmt.Println("No subscribers, or error getting list of subscribers")
+		reply.Status=tribrpc.OK
 		return nil
 	}
 
+	// TODO - cool merge 
 
+	//initialise empty slice of all postKeys from subscribers
+	var allPostKeys []string = make([]string,0)
 
+	//populate allPostKeys
+	for _,currUser := range(subscrList) {
+		currPostKeys,err := ts.libStore.GetList(util.FormatTribListKey(currUser))
+
+		if(err == nil) {
+			allPostKeys = append(allPostKeys,currPostKeys...)	
+
+		} else {
+			//fmt.Println("0 tribs for user detected")
+		}
+	}
+	
+	sort.Sort(PostByTime(allPostKeys))
+	fmt.Println("All postKeys:")
+	fmt.Println(allPostKeys)
+
+	//choose most recent posts, and get tribbles
+	var tribList []tribrpc.Tribble = ts.getTribbleList(allPostKeys)
+
+	reply.Tribbles = tribList
 	reply.Status = tribrpc.OK
 	return nil
-
+	
 }
