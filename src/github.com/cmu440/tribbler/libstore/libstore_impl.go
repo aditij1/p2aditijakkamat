@@ -229,7 +229,7 @@ func (ls *libstore) AppendToList(key, newItem string) error {
 
 	if err != nil {
 		fmt.Println("Libstore AppendToList: Error")
-		return nil
+		return err
 
 	} else if reply.Status != storagerpc.OK {
 
