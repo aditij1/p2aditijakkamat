@@ -116,10 +116,11 @@ func (ls *libstore) Get(key string) (string, error) {
 	err := ls.masterServ.Call("StorageServer.Get", getArgs, &reply)
 
 	if(err != nil) {
+		fmt.Println("LibStore Get: Error")
 		return "",err
 
 	} else if(reply.Status != storagerpc.OK) {
-
+		fmt.Println("LibStore Get: Error")
 		return "", errors.New("Reply status not Ok")
 	}
 
@@ -160,6 +161,7 @@ func (ls *libstore) Delete(key string) error {
 	err := ls.masterServ.Call("StorageServer.Delete", delArgs, &reply)
 
 	if(err != nil) {
+		fmt.Println("LibStore Delete: ")
 		return err
 
 	} else if(reply.Status != storagerpc.OK) {

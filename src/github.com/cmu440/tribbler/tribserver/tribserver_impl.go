@@ -250,6 +250,7 @@ func (ts *tribServer) PostTribble(args *tribrpc.PostTribbleArgs, reply *tribrpc.
 		//return err
 	}
 
+	reply.PostKey = postKey
 	reply.Status = tribrpc.OK
 	return nil
 }
@@ -261,10 +262,12 @@ func (ts *tribServer) PostTribble(args *tribrpc.PostTribbleArgs, reply *tribrpc.
 	*/
 
 func (ts *tribServer) DeleteTribble(args *tribrpc.DeleteTribbleArgs, reply *tribrpc.DeleteTribbleReply) error {
+	fmt.Println("Delete(), postKey: ", args.PostKey)
 
 	var usrID string = args.UserID
 	var postKey string = args.PostKey
 
+	fmt.Println("Delete(), postKey: ", postKey)
 	//check if user present in server
 	_,err := ts.libStore.Get(util.FormatUserKey(usrID))
 
@@ -278,6 +281,7 @@ func (ts *tribServer) DeleteTribble(args *tribrpc.DeleteTribbleArgs, reply *trib
 	_,err = ts.libStore.Get(postKey)
 
 	if(err != nil) {
+		//TODO
 		reply.Status = tribrpc.NoSuchPost
 		return nil
 	}
@@ -380,7 +384,6 @@ func (pkSlice PostByTime) Swap(i,j int) {
 }
 
 func (pkSlice PostByTime) Less(i,j int) bool {
-	fmt.Println("postKey to parse: ", pkSlice[i])
 	var key1 []string = strings.Split(pkSlice[i],"_")
 	var key2 []string = strings.Split(pkSlice[j],"_")
 
@@ -445,9 +448,7 @@ func (ts *tribServer) GetTribblesBySubscription(args *tribrpc.GetTribblesArgs, r
 	}
 	
 	sort.Sort(PostByTime(allPostKeys))
-	fmt.Println("All postKeys:")
-	fmt.Println(allPostKeys)
-
+	
 	//choose most recent posts, and get tribbles
 	var tribList []tribrpc.Tribble = ts.getTribbleList(allPostKeys)
 
