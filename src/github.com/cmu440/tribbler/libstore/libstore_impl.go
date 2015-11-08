@@ -74,7 +74,7 @@ func NewLibstore(masterServerHostPort, myHostPort string, mode LeaseMode) (Libst
 			return nil, err
 
 		} else if getServReply.Status != storagerpc.NotReady {
-
+			
 			return nil, errors.New("Error!")
 		}
 
