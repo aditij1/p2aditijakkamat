@@ -57,13 +57,31 @@ type libstore struct {
 /**
 Libstore deals with rerouting
 
-
 -Ask for servers until responds without error
 -Is responsible for asking thr correct server
 
 -StorageServer trick:
 	each user is mapped to a key, and the key maps to a list of tribbles
 */
+
+/* Begin defining interface to enable sorting of Nodes by NodeID */
+
+type NodeByID []storagerpc.Node
+
+func (nodeList NodeByID) Len() int {
+	return len(nodeList)
+}
+
+func (nodeList NodeByID) Swap(i,j int) {
+	nodeList[i], nodeList[j] = nodeList[j], nodeList[i]
+}
+
+func (nodeList NodeByID) Less(i,j int) bool {
+	return nodeList[i].NodeID < nodeList[j].NodeID
+}
+
+/* End interface definition */
+
 func NewLibstore(masterServerHostPort, myHostPort string, mode LeaseMode) (Libstore, error) {
 
 	masterServ, err := rpc.DialHTTP("tcp", masterServerHostPort)
@@ -381,3 +399,9 @@ func (ls *libstore) AppendToList(key, newItem string) error {
 func (ls *libstore) RevokeLease(args *storagerpc.RevokeLeaseArgs, reply *storagerpc.RevokeLeaseReply) error {
 	return errors.New("not implemented")
 }
+
+/*
+
+How does libstore know where to revoke?
+
+*/
