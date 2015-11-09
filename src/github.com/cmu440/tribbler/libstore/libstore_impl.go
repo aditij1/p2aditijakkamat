@@ -11,10 +11,14 @@ import (
 
 type libstore struct {
 	masterServ *rpc.Client
-	allServers []storagerpc.Node
+	allServerNodes []storagerpc.Node
 	mode       LeaseMode
 	hostPort   string
 }
+
+const TIMEOUT_GETTING_SERVERS = "GET_SERVER_TIMEOUT"
+const WRONG_SERVER = "WRONG_SERVER"
+const UNEXPECTED_ERROR = "UNEXPECTED_ERROR"
 
 // NewLibstore creates a new instance of a TribServer's libstore. masterServerHostPort
 // is the master storage server's host:port. myHostPort is this Libstore's host:port
@@ -62,30 +66,34 @@ func NewLibstore(masterServerHostPort, myHostPort string, mode LeaseMode) (Libst
 	getServArgs := storagerpc.GetServersArgs{}
 	//declare empty struct to store return
 	var getServReply storagerpc.GetServersReply
+	//retry every second, if not yet ready
+	timer := time.NewTimer(time.Second * 1)
+	var tryCount int = 0
 
 	for {
 		err = masterServ.Call("StorageServer.GetServers", getServArgs, &getServReply)
 
-		if err == nil {
-			break
-		}
-
 		if err != nil {
 			return nil, err
 
-		} else if getServReply.Status != storagerpc.NotReady {
-			
-			return nil, errors.New("Error!")
+		} else {
+			//err is nil
+			if getServReply.Status == storagerpc.OK {
+				break
+			}
 		}
 
-		//retry every second
-		timer := time.NewTimer(time.Second * 1)
+		if(tryCount == 5) {
+			return nil,errors.New(TIMEOUT_GETTING_SERVERS)
+		}
+		//status is not OK; wait for timer
 		<-timer.C
+		tryCount++
 	}
 
 	var newLs libstore = libstore{
 		masterServ: masterServ,
-		allServers: getServReply.Servers,
+		allServerNodes: getServReply.Servers,
 		mode:       mode,
 		hostPort:   myHostPort,
 	}
@@ -96,10 +104,11 @@ func NewLibstore(masterServerHostPort, myHostPort string, mode LeaseMode) (Libst
 func (ls *libstore) Get(key string) (string, error) {
 
 	var wantLease bool = false
+
 	if ls.mode == Never {
 		wantLease = false
 	}
-	//TODO else clause after checkpoint
+	//TODO else clause 
 
 	getArgs := storagerpc.GetArgs{
 		Key:       key,
@@ -115,10 +124,25 @@ func (ls *libstore) Get(key string) (string, error) {
 		fmt.Println("LibStore Get: Error")
 		return "", err
 
-	} else if reply.Status != storagerpc.OK {
-		fmt.Println("LibStore Get: Error")
-		return "", errors.New("Reply status not Ok")
+	} 
+		
+	switch reply.Status {
+
+		case storagerpc.OK:
+			return reply.Value, nil
+			break
+		
+		case storagerpc.WrongServer:
+			return "", errors.New(WRONG_SERVER)
+			break;
+		
+		default:
+			return "", errors.New(UNEXPECTED_ERROR)
 	}
+	
+	//fmt.Println("LibStore Get: Error")
+	//return "", errors.New("Reply status not Ok")
+	
 
 	return reply.Value, nil
 }
