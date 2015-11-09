@@ -18,6 +18,9 @@ type libstore struct {
 
 const TIMEOUT_GETTING_SERVERS = "GET_SERVER_TIMEOUT"
 const WRONG_SERVER = "WRONG_SERVER"
+const KEY_NOT_FOUND = "KEY_NOT_FOUND"
+const ITEM_EXISTS = "ITEM_EXISTS"
+const ITEM_NOT_FOUND = "ITEM_NOT_FOUND"
 const UNEXPECTED_ERROR = "UNEXPECTED_ERROR"
 
 // NewLibstore creates a new instance of a TribServer's libstore. masterServerHostPort
@@ -134,10 +137,12 @@ func (ls *libstore) Get(key string) (string, error) {
 		
 		case storagerpc.WrongServer:
 			return "", errors.New(WRONG_SERVER)
-			break;
+			break
 		
 		default:
+			fmt.Println("LibStore received unexpected error")
 			return "", errors.New(UNEXPECTED_ERROR)
+			break
 	}
 	
 	//fmt.Println("LibStore Get: Error")
@@ -160,9 +165,20 @@ func (ls *libstore) Put(key, value string) error {
 	if err != nil {
 		return err
 
-	} else if reply.Status != storagerpc.OK {
+	} 
 
-		return errors.New("Reply status not Ok")
+	switch reply.Status {
+		case storagerpc.OK:
+			return nil
+			break
+		
+		case storagerpc.WrongServer:
+			return errors.New(WRONG_SERVER)
+			break;
+		
+		default:
+			fmt.Println("LibStore received unexpected error")
+			return errors.New(UNEXPECTED_ERROR)
 	}
 
 	return nil
@@ -179,12 +195,27 @@ func (ls *libstore) Delete(key string) error {
 	err := ls.masterServ.Call("StorageServer.Delete", delArgs, &reply)
 
 	if err != nil {
-		fmt.Println("LibStore Delete: ")
+		fmt.Println("LibStore Delete: error")
 		return err
 
-	} else if reply.Status != storagerpc.OK {
+	} 
 
-		return errors.New("Reply status not Ok")
+	switch reply.Status {
+		case storagerpc.OK:
+			return nil
+			break
+
+		case storagerpc.KeyNotFound:
+			return errors.New(KEY_NOT_FOUND)
+			break
+		
+		case storagerpc.WrongServer:
+			return errors.New(WRONG_SERVER)
+			break
+		
+		default:
+			fmt.Println("LibStore received unexpected error")
+			return errors.New(UNEXPECTED_ERROR)
 	}
 
 	return nil
@@ -212,15 +243,31 @@ func (ls *libstore) GetList(key string) ([]string, error) {
 	if err != nil {
 		return make([]string, 0), err
 
-	} else if reply.Status != storagerpc.OK {
+	} 
 
-		return make([]string, 0), errors.New("Reply status not Ok")
+	switch reply.Status {
+		case storagerpc.OK:
+			return reply.Value,nil
+			break
+
+		case storagerpc.KeyNotFound:
+			return make([]string, 0), errors.New(KEY_NOT_FOUND)
+			break
+		
+		case storagerpc.WrongServer:
+			return make([]string, 0), errors.New(WRONG_SERVER)
+			break
+		
+		default:
+			fmt.Println("LibStore received unexpected error")
+			return make([]string, 0), errors.New(UNEXPECTED_ERROR)
 	}
 
 	return reply.Value, nil
 }
 
 func (ls *libstore) RemoveFromList(key, removeItem string) error {
+
 	putArgs := storagerpc.PutArgs{
 		Key:   key,
 		Value: removeItem,
@@ -233,9 +280,24 @@ func (ls *libstore) RemoveFromList(key, removeItem string) error {
 	if err != nil {
 		return err
 
-	} else if reply.Status != storagerpc.OK {
+	} 
 
-		return errors.New("Reply status not Ok")
+	switch reply.Status {
+		case storagerpc.OK:
+			return nil
+			break
+
+		case storagerpc.ItemNotFound:
+			return errors.New(ITEM_NOT_FOUND)
+			break
+		
+		case storagerpc.WrongServer:
+			return errors.New(WRONG_SERVER)
+			break
+		
+		default:
+			fmt.Println("LibStore received unexpected error")
+			return errors.New(UNEXPECTED_ERROR)
 	}
 
 	return nil
@@ -255,9 +317,24 @@ func (ls *libstore) AppendToList(key, newItem string) error {
 		fmt.Println("Libstore AppendToList: Error")
 		return err
 
-	} else if reply.Status != storagerpc.OK {
+	} 
 
-		return errors.New("Reply status not Ok")
+	switch reply.Status {
+		case storagerpc.OK:
+			return nil
+			break
+
+		case storagerpc.ItemExists:
+			return errors.New(ITEM_EXISTS)
+			break
+		
+		case storagerpc.WrongServer:
+			return errors.New(WRONG_SERVER)
+			break
+		
+		default:
+			fmt.Println("LibStore received unexpected error")
+			return errors.New(UNEXPECTED_ERROR)
 	}
 
 	return nil
