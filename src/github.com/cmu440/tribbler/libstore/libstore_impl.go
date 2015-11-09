@@ -5,23 +5,29 @@ import (
 	"fmt"
 	"net/rpc"
 	"time"
+	//"sort"
 	//"strconv"
 	"github.com/cmu440/tribbler/rpc/storagerpc"
 )
-
-type libstore struct {
-	masterServ *rpc.Client
-	allServerNodes []storagerpc.Node
-	mode       LeaseMode
-	hostPort   string
-}
 
 const TIMEOUT_GETTING_SERVERS = "GET_SERVER_TIMEOUT"
 const WRONG_SERVER = "WRONG_SERVER"
 const KEY_NOT_FOUND = "KEY_NOT_FOUND"
 const ITEM_EXISTS = "ITEM_EXISTS"
 const ITEM_NOT_FOUND = "ITEM_NOT_FOUND"
+
+const ERROR_DIAL_TCP = "ERROR_DIAL_TCP"
 const UNEXPECTED_ERROR = "UNEXPECTED_ERROR"
+
+
+type libstore struct {
+	masterServ *rpc.Client
+	allServerNodes []storagerpc.Node
+	serverConnMap map[storagerpc.Node]*rpc.Client
+	mode       LeaseMode
+	hostPort   string
+}
+
 
 // NewLibstore creates a new instance of a TribServer's libstore. masterServerHostPort
 // is the master storage server's host:port. myHostPort is this Libstore's host:port
@@ -94,9 +100,11 @@ func NewLibstore(masterServerHostPort, myHostPort string, mode LeaseMode) (Libst
 		tryCount++
 	}
 
+	//TODO verufy allServerNodes is sorted, or sort it
 	var newLs libstore = libstore{
 		masterServ: masterServ,
 		allServerNodes: getServReply.Servers,
+		serverConnMap: make(map[storagerpc.Node]*rpc.Client),
 		mode:       mode,
 		hostPort:   myHostPort,
 	}
@@ -113,14 +121,44 @@ func (ls *libstore) Get(key string) (string, error) {
 	}
 	//TODO else clause 
 
+	var hashCode uint32 = StoreHash(key)
+
+	var targetNode storagerpc.Node = ls.allServerNodes[0]
+
+	//Find target server
+	for _,currNode := range(ls.allServerNodes) {
+		if(currNode.NodeID < hashCode) {
+			//take the first NodeID that > hashCode
+			targetNode = currNode
+			break
+		} 
+	}
+
+	serverConn,isCached := ls.serverConnMap[targetNode]
+
+	if(!isCached) {
+		serverConn, err := rpc.DialHTTP("tcp", targetNode.HostPort)
+
+		if(err != nil) {
+			return "", errors.New(ERROR_DIAL_TCP)
+		
+		} else {
+			//add to cache
+			ls.serverConnMap[targetNode] = serverConn
+		} 
+	}
+
+	fmt.Println(serverConn)
+
+	//use serverConn
+
 	getArgs := storagerpc.GetArgs{
 		Key:       key,
 		WantLease: wantLease,
 		HostPort:  ls.hostPort,
-	}
+	}	
 
 	var reply storagerpc.GetReply
-
 	err := ls.masterServ.Call("StorageServer.Get", getArgs, &reply)
 
 	if err != nil {
