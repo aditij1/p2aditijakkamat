@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"net/rpc"
 	"time"
-	//"sort"
+	"sort"
 	//"strconv"
 	"github.com/cmu440/tribbler/rpc/storagerpc"
 )
@@ -118,10 +118,17 @@ func NewLibstore(masterServerHostPort, myHostPort string, mode LeaseMode) (Libst
 		tryCount++
 	}
 
-	//TODO verufy allServerNodes is sorted, or sort it
+	//Convert to sort interface type and sort
+	var toBeSortedNodes NodeByID = NodeByID(getServReply.Servers)
+	sort.Sort(toBeSortedNodes)
+
+	//Convert back to []Node type
+	var sortedNodes []storagerpc.Node = []storagerpc.Node(toBeSortedNodes)
+	fmt.Println(sortedNodes)
+
 	var newLs libstore = libstore{
 		masterServ: masterServ,
-		allServerNodes: getServReply.Servers,
+		allServerNodes: sortedNodes,
 		serverConnMap: make(map[storagerpc.Node]*rpc.Client),
 		mode:       mode,
 		hostPort:   myHostPort,
