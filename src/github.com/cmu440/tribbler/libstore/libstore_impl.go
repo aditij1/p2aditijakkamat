@@ -127,6 +127,8 @@ func NewLibstore(masterServerHostPort, myHostPort string, mode LeaseMode) (Libst
 	var sortedNodes []storagerpc.Node = []storagerpc.Node(toBeSortedNodes)
 	fmt.Println(sortedNodes)
 
+	//TODo add master server to map?
+
 	var newLs libstore = libstore{
 		masterServ: masterServ,
 		allServerNodes: sortedNodes,
@@ -138,7 +140,7 @@ func NewLibstore(masterServerHostPort, myHostPort string, mode LeaseMode) (Libst
 	return &newLs, nil
 }
 
-func (ls *libstore) getNodeAndCache(key string) (*rpc.Client, error) {
+func (ls *libstore) getAndCacheNode(key string) (*rpc.Client, error) {
 	var hashCode uint32 = StoreHash(key)
 
 	//fmt.Println("allServerNodes len:", len(ls.allServerNodes), "\ndetails:")
@@ -184,7 +186,7 @@ func (ls *libstore) Get(key string) (string, error) {
 	}
 	//TODO else clause
 
-	serverConn, err := ls.getNodeAndCache(key)
+	serverConn, err := ls.getAndCacheNode(key)
 
 	if(err != nil) {
 		//error dialling
@@ -235,9 +237,15 @@ func (ls *libstore) Put(key, value string) error {
 		Value: value,
 	}
 
-	var reply storagerpc.PutReply
+	serverConn, err := ls.getAndCacheNode(key)
 
-	err := ls.masterServ.Call("StorageServer.Put", putArgs, &reply)
+	if(err != nil) {
+		//error dialling
+		return err
+	}	
+
+	var reply storagerpc.PutReply
+	err = serverConn.Call("StorageServer.Put", putArgs, &reply)
 
 	if err != nil {
 		return err
@@ -267,9 +275,16 @@ func (ls *libstore) Delete(key string) error {
 		Key: key,
 	}
 
+	serverConn, err := ls.getAndCacheNode(key)
+
+	if(err != nil) {
+		//error dialling
+		return err
+	}
+
 	var reply storagerpc.DeleteReply
 
-	err := ls.masterServ.Call("StorageServer.Delete", delArgs, &reply)
+	err = serverConn.Call("StorageServer.Delete", delArgs, &reply)
 
 	if err != nil {
 		fmt.Println("LibStore Delete: error")
@@ -307,6 +322,13 @@ func (ls *libstore) GetList(key string) ([]string, error) {
 	}
 	//TODO else clause after checkpoint
 
+	serverConn, err := ls.getAndCacheNode(key)
+
+	if(err != nil) {
+		//error dialling
+		return make([]string,0),err
+	}
+
 	getArgs := storagerpc.GetArgs{
 		Key:       key,
 		WantLease: wantLease,
@@ -315,7 +337,7 @@ func (ls *libstore) GetList(key string) ([]string, error) {
 
 	var reply storagerpc.GetListReply
 
-	err := ls.masterServ.Call("StorageServer.GetList", getArgs, &reply)
+	err = serverConn.Call("StorageServer.GetList", getArgs, &reply)
 
 	if err != nil {
 		return make([]string, 0), err
@@ -345,6 +367,13 @@ func (ls *libstore) GetList(key string) ([]string, error) {
 
 func (ls *libstore) RemoveFromList(key, removeItem string) error {
 
+	serverConn, err := ls.getAndCacheNode(key)
+
+	if(err != nil) {
+		//error dialling
+		return err
+	}	
+
 	putArgs := storagerpc.PutArgs{
 		Key:   key,
 		Value: removeItem,
@@ -352,7 +381,7 @@ func (ls *libstore) RemoveFromList(key, removeItem string) error {
 
 	var reply storagerpc.PutReply
 
-	err := ls.masterServ.Call("StorageServer.RemoveFromList", putArgs, &reply)
+	err = serverConn.Call("StorageServer.RemoveFromList", putArgs, &reply)
 
 	if err != nil {
 		return err
@@ -381,6 +410,13 @@ func (ls *libstore) RemoveFromList(key, removeItem string) error {
 }
 
 func (ls *libstore) AppendToList(key, newItem string) error {
+	serverConn, err := ls.getAndCacheNode(key)
+
+	if(err != nil) {
+		//error dialling
+		return err
+	}
+
 	putArgs := storagerpc.PutArgs{
 		Key:   key,
 		Value: newItem,
@@ -388,7 +424,7 @@ func (ls *libstore) AppendToList(key, newItem string) error {
 
 	var reply storagerpc.PutReply
 
-	err := ls.masterServ.Call("StorageServer.AppendToList", putArgs, &reply)
+	err = serverConn.Call("StorageServer.AppendToList", putArgs, &reply)
 
 	if err != nil {
 		fmt.Println("Libstore AppendToList: Error")
