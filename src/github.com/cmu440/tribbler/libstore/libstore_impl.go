@@ -5,16 +5,29 @@ import (
 	"fmt"
 	"net/rpc"
 	"time"
+	"sort"
 	//"strconv"
 	"github.com/cmu440/tribbler/rpc/storagerpc"
 )
 
+const TIMEOUT_GETTING_SERVERS = "GET_SERVER_TIMEOUT"
+const WRONG_SERVER = "WRONG_SERVER"
+const KEY_NOT_FOUND = "KEY_NOT_FOUND"
+const ITEM_EXISTS = "ITEM_EXISTS"
+const ITEM_NOT_FOUND = "ITEM_NOT_FOUND"
+
+const ERROR_DIAL_TCP = "ERROR_DIAL_TCP"
+const UNEXPECTED_ERROR = "UNEXPECTED_ERROR"
+
+
 type libstore struct {
 	masterServ *rpc.Client
-	allServers []storagerpc.Node
+	allServerNodes []storagerpc.Node
+	serverConnMap map[storagerpc.Node]*rpc.Client
 	mode       LeaseMode
 	hostPort   string
 }
+
 
 // NewLibstore creates a new instance of a TribServer's libstore. masterServerHostPort
 // is the master storage server's host:port. myHostPort is this Libstore's host:port
@@ -44,13 +57,31 @@ type libstore struct {
 /**
 Libstore deals with rerouting
 
-
 -Ask for servers until responds without error
 -Is responsible for asking thr correct server
 
 -StorageServer trick:
 	each user is mapped to a key, and the key maps to a list of tribbles
 */
+
+/* Begin defining interface to enable sorting of Nodes by NodeID */
+
+type NodeByID []storagerpc.Node
+
+func (nodeList NodeByID) Len() int {
+	return len(nodeList)
+}
+
+func (nodeList NodeByID) Swap(i,j int) {
+	nodeList[i], nodeList[j] = nodeList[j], nodeList[i]
+}
+
+func (nodeList NodeByID) Less(i,j int) bool {
+	return nodeList[i].NodeID < nodeList[j].NodeID
+}
+
+/* End interface definition */
+
 func NewLibstore(masterServerHostPort, myHostPort string, mode LeaseMode) (Libstore, error) {
 
 	masterServ, err := rpc.DialHTTP("tcp", masterServerHostPort)
@@ -62,30 +93,46 @@ func NewLibstore(masterServerHostPort, myHostPort string, mode LeaseMode) (Libst
 	getServArgs := storagerpc.GetServersArgs{}
 	//declare empty struct to store return
 	var getServReply storagerpc.GetServersReply
+	//retry every second, if not yet ready
+	timer := time.NewTimer(time.Second * 1)
+	var tryCount int = 0
 
 	for {
 		err = masterServ.Call("StorageServer.GetServers", getServArgs, &getServReply)
 
-		if err == nil {
-			break
-		}
-
 		if err != nil {
 			return nil, err
 
-		} else if getServReply.Status != storagerpc.NotReady {
-
-			return nil, errors.New("Error!")
+		} else {
+			//err is nil
+			if getServReply.Status == storagerpc.OK {
+				break
+			}
 		}
 
-		//retry every second
-		timer := time.NewTimer(time.Second * 1)
+		if(tryCount == 5) {
+			return nil,errors.New(TIMEOUT_GETTING_SERVERS)
+		}
+		//status is not OK; wait for timer
 		<-timer.C
+		tryCount++
 	}
+
+	//Convert to sort interface type and sort
+	var toBeSortedNodes NodeByID = NodeByID(getServReply.Servers)
+	sort.Sort(toBeSortedNodes)
+
+
+	//Convert back to []Node type
+	var sortedNodes []storagerpc.Node = []storagerpc.Node(toBeSortedNodes)
+	fmt.Println(sortedNodes)
+
+	//TODo add master server to map?
 
 	var newLs libstore = libstore{
 		masterServ: masterServ,
-		allServers: getServReply.Servers,
+		allServerNodes: sortedNodes,
+		serverConnMap: make(map[storagerpc.Node]*rpc.Client),
 		mode:       mode,
 		hostPort:   myHostPort,
 	}
@@ -93,32 +140,93 @@ func NewLibstore(masterServerHostPort, myHostPort string, mode LeaseMode) (Libst
 	return &newLs, nil
 }
 
+func (ls *libstore) getAndCacheNode(key string) (*rpc.Client, error) {
+	var hashCode uint32 = StoreHash(key)
+
+	//fmt.Println("allServerNodes len:", len(ls.allServerNodes), "\ndetails:")
+	//fmt.Println(ls.allServerNodes)
+
+	var targetNode storagerpc.Node = ls.allServerNodes[0]
+
+	//Find target server
+	for _,currNode := range(ls.allServerNodes) {
+		if(currNode.NodeID < hashCode) {
+			//take the first NodeID that > hashCode
+			targetNode = currNode
+			break
+		} 
+	}
+
+	serverConn,isCached := ls.serverConnMap[targetNode]
+
+	if(!isCached) {
+		//initialise err variable
+		err := errors.New("Initialise value for err variable")
+		serverConn, err = rpc.DialHTTP("tcp", targetNode.HostPort)
+
+		if(err != nil) {
+			fmt.Println("Error DialHTTP in libstore")
+			return nil, errors.New(ERROR_DIAL_TCP)
+		
+		} else {
+			//add to cache
+			ls.serverConnMap[targetNode] = serverConn
+		} 
+	}
+
+	return serverConn,nil
+}
+
 func (ls *libstore) Get(key string) (string, error) {
 
 	var wantLease bool = false
+
 	if ls.mode == Never {
 		wantLease = false
 	}
-	//TODO else clause after checkpoint
+	//TODO else clause
+
+	serverConn, err := ls.getAndCacheNode(key)
+
+	if(err != nil) {
+		//error dialling
+		return "", err
+	}
 
 	getArgs := storagerpc.GetArgs{
 		Key:       key,
 		WantLease: wantLease,
 		HostPort:  ls.hostPort,
-	}
+	}	
 
 	var reply storagerpc.GetReply
-
-	err := ls.masterServ.Call("StorageServer.Get", getArgs, &reply)
+	err = serverConn.Call("StorageServer.Get", getArgs, &reply)
 
 	if err != nil {
 		fmt.Println("LibStore Get: Error")
 		return "", err
 
-	} else if reply.Status != storagerpc.OK {
-		fmt.Println("LibStore Get: Error")
-		return "", errors.New("Reply status not Ok")
+	} 
+		
+	switch reply.Status {
+
+		case storagerpc.OK:
+			return reply.Value, nil
+			break
+		
+		case storagerpc.WrongServer:
+			return "", errors.New(WRONG_SERVER)
+			break
+		
+		default:
+			fmt.Println("LibStore received unexpected error")
+			return "", errors.New(UNEXPECTED_ERROR)
+			break
 	}
+	
+	//fmt.Println("LibStore Get: Error")
+	//return "", errors.New("Reply status not Ok")
+	
 
 	return reply.Value, nil
 }
@@ -129,16 +237,33 @@ func (ls *libstore) Put(key, value string) error {
 		Value: value,
 	}
 
-	var reply storagerpc.PutReply
+	serverConn, err := ls.getAndCacheNode(key)
 
-	err := ls.masterServ.Call("StorageServer.Put", putArgs, &reply)
+	if(err != nil) {
+		//error dialling
+		return err
+	}	
+
+	var reply storagerpc.PutReply
+	err = serverConn.Call("StorageServer.Put", putArgs, &reply)
 
 	if err != nil {
 		return err
 
-	} else if reply.Status != storagerpc.OK {
+	} 
 
-		return errors.New("Reply status not Ok")
+	switch reply.Status {
+		case storagerpc.OK:
+			return nil
+			break
+		
+		case storagerpc.WrongServer:
+			return errors.New(WRONG_SERVER)
+			break;
+		
+		default:
+			fmt.Println("LibStore received unexpected error")
+			return errors.New(UNEXPECTED_ERROR)
 	}
 
 	return nil
@@ -150,17 +275,39 @@ func (ls *libstore) Delete(key string) error {
 		Key: key,
 	}
 
+	serverConn, err := ls.getAndCacheNode(key)
+
+	if(err != nil) {
+		//error dialling
+		return err
+	}
+
 	var reply storagerpc.DeleteReply
 
-	err := ls.masterServ.Call("StorageServer.Delete", delArgs, &reply)
+	err = serverConn.Call("StorageServer.Delete", delArgs, &reply)
 
 	if err != nil {
-		fmt.Println("LibStore Delete: ")
+		fmt.Println("LibStore Delete: error")
 		return err
 
-	} else if reply.Status != storagerpc.OK {
+	} 
 
-		return errors.New("Reply status not Ok")
+	switch reply.Status {
+		case storagerpc.OK:
+			return nil
+			break
+
+		case storagerpc.KeyNotFound:
+			return errors.New(KEY_NOT_FOUND)
+			break
+		
+		case storagerpc.WrongServer:
+			return errors.New(WRONG_SERVER)
+			break
+		
+		default:
+			fmt.Println("LibStore received unexpected error")
+			return errors.New(UNEXPECTED_ERROR)
 	}
 
 	return nil
@@ -175,6 +322,13 @@ func (ls *libstore) GetList(key string) ([]string, error) {
 	}
 	//TODO else clause after checkpoint
 
+	serverConn, err := ls.getAndCacheNode(key)
+
+	if(err != nil) {
+		//error dialling
+		return make([]string,0),err
+	}
+
 	getArgs := storagerpc.GetArgs{
 		Key:       key,
 		WantLease: wantLease,
@@ -183,20 +337,43 @@ func (ls *libstore) GetList(key string) ([]string, error) {
 
 	var reply storagerpc.GetListReply
 
-	err := ls.masterServ.Call("StorageServer.GetList", getArgs, &reply)
+	err = serverConn.Call("StorageServer.GetList", getArgs, &reply)
 
 	if err != nil {
 		return make([]string, 0), err
 
-	} else if reply.Status != storagerpc.OK {
+	} 
 
-		return make([]string, 0), errors.New("Reply status not Ok")
+	switch reply.Status {
+		case storagerpc.OK:
+			return reply.Value,nil
+			break
+
+		case storagerpc.KeyNotFound:
+			return make([]string, 0), errors.New(KEY_NOT_FOUND)
+			break
+		
+		case storagerpc.WrongServer:
+			return make([]string, 0), errors.New(WRONG_SERVER)
+			break
+		
+		default:
+			fmt.Println("LibStore received unexpected error")
+			return make([]string, 0), errors.New(UNEXPECTED_ERROR)
 	}
 
 	return reply.Value, nil
 }
 
 func (ls *libstore) RemoveFromList(key, removeItem string) error {
+
+	serverConn, err := ls.getAndCacheNode(key)
+
+	if(err != nil) {
+		//error dialling
+		return err
+	}	
+
 	putArgs := storagerpc.PutArgs{
 		Key:   key,
 		Value: removeItem,
@@ -204,20 +381,42 @@ func (ls *libstore) RemoveFromList(key, removeItem string) error {
 
 	var reply storagerpc.PutReply
 
-	err := ls.masterServ.Call("StorageServer.RemoveFromList", putArgs, &reply)
+	err = serverConn.Call("StorageServer.RemoveFromList", putArgs, &reply)
 
 	if err != nil {
 		return err
 
-	} else if reply.Status != storagerpc.OK {
+	} 
 
-		return errors.New("Reply status not Ok")
+	switch reply.Status {
+		case storagerpc.OK:
+			return nil
+			break
+
+		case storagerpc.ItemNotFound:
+			return errors.New(ITEM_NOT_FOUND)
+			break
+		
+		case storagerpc.WrongServer:
+			return errors.New(WRONG_SERVER)
+			break
+		
+		default:
+			fmt.Println("LibStore received unexpected error")
+			return errors.New(UNEXPECTED_ERROR)
 	}
 
 	return nil
 }
 
 func (ls *libstore) AppendToList(key, newItem string) error {
+	serverConn, err := ls.getAndCacheNode(key)
+
+	if(err != nil) {
+		//error dialling
+		return err
+	}
+
 	putArgs := storagerpc.PutArgs{
 		Key:   key,
 		Value: newItem,
@@ -225,15 +424,30 @@ func (ls *libstore) AppendToList(key, newItem string) error {
 
 	var reply storagerpc.PutReply
 
-	err := ls.masterServ.Call("StorageServer.AppendToList", putArgs, &reply)
+	err = serverConn.Call("StorageServer.AppendToList", putArgs, &reply)
 
 	if err != nil {
 		fmt.Println("Libstore AppendToList: Error")
 		return err
 
-	} else if reply.Status != storagerpc.OK {
+	} 
 
-		return errors.New("Reply status not Ok")
+	switch reply.Status {
+		case storagerpc.OK:
+			return nil
+			break
+
+		case storagerpc.ItemExists:
+			return errors.New(ITEM_EXISTS)
+			break
+		
+		case storagerpc.WrongServer:
+			return errors.New(WRONG_SERVER)
+			break
+		
+		default:
+			fmt.Println("LibStore received unexpected error")
+			return errors.New(UNEXPECTED_ERROR)
 	}
 
 	return nil
@@ -242,3 +456,9 @@ func (ls *libstore) AppendToList(key, newItem string) error {
 func (ls *libstore) RevokeLease(args *storagerpc.RevokeLeaseArgs, reply *storagerpc.RevokeLeaseReply) error {
 	return errors.New("not implemented")
 }
+
+/*
+
+How does libstore know where to revoke?
+
+*/
