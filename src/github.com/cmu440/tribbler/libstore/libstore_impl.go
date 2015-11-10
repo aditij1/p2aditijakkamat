@@ -84,6 +84,7 @@ func (nodeList NodeByID) Less(i,j int) bool {
 
 func NewLibstore(masterServerHostPort, myHostPort string, mode LeaseMode) (Libstore, error) {
 
+	fmt.Println("Running NewLibstore")
 	masterServ, err := rpc.DialHTTP("tcp", masterServerHostPort)
 
 	if err != nil {
@@ -95,26 +96,32 @@ func NewLibstore(masterServerHostPort, myHostPort string, mode LeaseMode) (Libst
 	var getServReply storagerpc.GetServersReply
 	//retry every second, if not yet ready
 	timer := time.NewTimer(time.Second * 1)
+
 	var tryCount int = 0
 
 	for {
+		fmt.Println("calling get servers")
 		err = masterServ.Call("StorageServer.GetServers", getServArgs, &getServReply)
-
+		fmt.Println("Return from rpc call")
 		if err != nil {
 			return nil, err
 
 		} else {
 			//err is nil
 			if getServReply.Status == storagerpc.OK {
+				fmt.Println("NewLibstore: Status OK, breaking..")
 				break
 			}
 		}
 
-		if(tryCount == 5) {
+		if(tryCount == 4) {
 			return nil,errors.New(TIMEOUT_GETTING_SERVERS)
 		}
 		//status is not OK; wait for timer
+
+		fmt.Println("Waiting for timer channel..")
 		<-timer.C
+		fmt.Println("Slowserv: counting ", tryCount)
 		tryCount++
 	}
 
