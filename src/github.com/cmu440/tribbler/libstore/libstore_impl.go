@@ -122,6 +122,7 @@ func NewLibstore(masterServerHostPort, myHostPort string, mode LeaseMode) (Libst
 	var toBeSortedNodes NodeByID = NodeByID(getServReply.Servers)
 	sort.Sort(toBeSortedNodes)
 
+
 	//Convert back to []Node type
 	var sortedNodes []storagerpc.Node = []storagerpc.Node(toBeSortedNodes)
 	fmt.Println(sortedNodes)
@@ -137,16 +138,11 @@ func NewLibstore(masterServerHostPort, myHostPort string, mode LeaseMode) (Libst
 	return &newLs, nil
 }
 
-func (ls *libstore) Get(key string) (string, error) {
-
-	var wantLease bool = false
-
-	if ls.mode == Never {
-		wantLease = false
-	}
-	//TODO else clause 
-
+func (ls *libstore) getNodeAndCache(key string) (*rpc.Client, error) {
 	var hashCode uint32 = StoreHash(key)
+
+	//fmt.Println("allServerNodes len:", len(ls.allServerNodes), "\ndetails:")
+	//fmt.Println(ls.allServerNodes)
 
 	var targetNode storagerpc.Node = ls.allServerNodes[0]
 
@@ -162,10 +158,13 @@ func (ls *libstore) Get(key string) (string, error) {
 	serverConn,isCached := ls.serverConnMap[targetNode]
 
 	if(!isCached) {
-		serverConn, err := rpc.DialHTTP("tcp", targetNode.HostPort)
+		//initialise err variable
+		err := errors.New("Initialise value for err variable")
+		serverConn, err = rpc.DialHTTP("tcp", targetNode.HostPort)
 
 		if(err != nil) {
-			return "", errors.New(ERROR_DIAL_TCP)
+			fmt.Println("Error DialHTTP in libstore")
+			return nil, errors.New(ERROR_DIAL_TCP)
 		
 		} else {
 			//add to cache
@@ -173,9 +172,24 @@ func (ls *libstore) Get(key string) (string, error) {
 		} 
 	}
 
-	fmt.Println(serverConn)
+	return serverConn,nil
+}
 
-	//use serverConn
+func (ls *libstore) Get(key string) (string, error) {
+
+	var wantLease bool = false
+
+	if ls.mode == Never {
+		wantLease = false
+	}
+	//TODO else clause
+
+	serverConn, err := ls.getNodeAndCache(key)
+
+	if(err != nil) {
+		//error dialling
+		return "", err
+	}
 
 	getArgs := storagerpc.GetArgs{
 		Key:       key,
@@ -184,7 +198,7 @@ func (ls *libstore) Get(key string) (string, error) {
 	}	
 
 	var reply storagerpc.GetReply
-	err := ls.masterServ.Call("StorageServer.Get", getArgs, &reply)
+	err = serverConn.Call("StorageServer.Get", getArgs, &reply)
 
 	if err != nil {
 		fmt.Println("LibStore Get: Error")
