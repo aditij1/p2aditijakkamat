@@ -6,6 +6,7 @@ import (
 	"net/rpc"
 	"time"
 	"sort"
+	"sync"
 	//"strconv"
 	"github.com/cmu440/tribbler/rpc/storagerpc"
 )
@@ -21,11 +22,14 @@ const UNEXPECTED_ERROR = "UNEXPECTED_ERROR"
 
 
 type libstore struct {
-	masterServ *rpc.Client
+	masterServ 		*rpc.Client
 	allServerNodes []storagerpc.Node
-	serverConnMap map[storagerpc.Node]*rpc.Client
-	mode       LeaseMode
-	hostPort   string
+	serverConnMap 	map[storagerpc.Node]*rpc.Client
+	dataMap 		map[string]interface{}
+	queries 		map[string] ([]time.Time)
+	queriesLock 	*sync.Mutex
+	mode       		LeaseMode
+	hostPort   		string
 }
 
 
@@ -84,7 +88,7 @@ func (nodeList NodeByID) Less(i,j int) bool {
 
 func NewLibstore(masterServerHostPort, myHostPort string, mode LeaseMode) (Libstore, error) {
 
-	fmt.Println("Running NewLibstore")
+	//fmt.Println("Running NewLibstore")
 	masterServ, err := rpc.DialHTTP("tcp", masterServerHostPort)
 
 	if err != nil {
@@ -100,16 +104,16 @@ func NewLibstore(masterServerHostPort, myHostPort string, mode LeaseMode) (Libst
 	var tryCount int = 0
 
 	for {
-		fmt.Println("calling get servers")
+		//fmt.Println("calling get servers")
 		err = masterServ.Call("StorageServer.GetServers", getServArgs, &getServReply)
-		fmt.Println("Return from rpc call")
+		//fmt.Println("Return from rpc call")
 		if err != nil {
 			return nil, err
 
 		} else {
 			//err is nil
 			if getServReply.Status == storagerpc.OK {
-				fmt.Println("NewLibstore: Status OK, breaking..")
+				//fmt.Println("NewLibstore: Status OK, breaking..")
 				break
 			}
 		}
@@ -119,9 +123,9 @@ func NewLibstore(masterServerHostPort, myHostPort string, mode LeaseMode) (Libst
 		}
 		//status is not OK; wait for timer
 
-		fmt.Println("Waiting for timer channel..")
+		//fmt.Println("Waiting for timer channel..")
 		<-timer.C
-		fmt.Println("Slowserv: counting ", tryCount)
+		//fmt.Println("Slowserv: counting ", tryCount)
 		tryCount++
 	}
 
@@ -137,14 +141,26 @@ func NewLibstore(masterServerHostPort, myHostPort string, mode LeaseMode) (Libst
 	//TODo add master server to map?
 
 	var newLs libstore = libstore{
-		masterServ: masterServ,
+		masterServ: 	masterServ,
 		allServerNodes: sortedNodes,
-		serverConnMap: make(map[storagerpc.Node]*rpc.Client),
-		mode:       mode,
-		hostPort:   myHostPort,
+		serverConnMap: 	make(map[storagerpc.Node]*rpc.Client),
+		dataMap: 		make(map[string] interface{}),
+		queries: 		make(map[string] ([]time.Time)),
+		queriesLock: 	&sync.Mutex{},
+		mode:       	mode,
+		hostPort:   	myHostPort,
 	}
 
 	return &newLs, nil
+}
+
+/* Add key to queries[] map */
+func (ls *libstore) clockQuery(key string) {
+	
+	ls.queriesLock.Lock()
+	var reqTimes []time.Time = ls.queries[key]
+	ls.queries[key] = append([]time.Time{time.Now()},reqTimes...)
+	ls.queriesLock.Unlock()
 }
 
 func (ls *libstore) getAndCacheNode(key string) (*rpc.Client, error) {
@@ -192,6 +208,8 @@ func (ls *libstore) Get(key string) (string, error) {
 		wantLease = false
 	}
 	//TODO else clause
+
+	ls.clockQuery(key)
 
 	serverConn, err := ls.getAndCacheNode(key)
 
@@ -328,6 +346,8 @@ func (ls *libstore) GetList(key string) ([]string, error) {
 		wantLease = false
 	}
 	//TODO else clause after checkpoint
+
+	ls.clockQuery(key)
 
 	serverConn, err := ls.getAndCacheNode(key)
 
