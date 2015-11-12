@@ -3,8 +3,8 @@ package storageserver
 import (
 	"container/list"
 	"fmt"
-	"github.com/cmu440/tribbler/rpc/storagerpc"
 	"github.com/cmu440/tribbler/libstore"
+	"github.com/cmu440/tribbler/rpc/storagerpc"
 	"net"
 	"net/http"
 	"net/rpc"
@@ -15,27 +15,28 @@ import (
 )
 
 type LeaseWrapper struct {
-	lease storagerpc.Lease
+	lease       storagerpc.Lease
 	timeGranted time.Time
-	hostport string
+	hostport    string
 }
 
 type storageServer struct {
-	node            storagerpc.Node
-	servers         []storagerpc.Node
-	numNodes        int
-	nextNode        int             // Idx in servers for next incoming Register request
-	seenNodes       map[uint32]bool // Seen node ids for master storage to keep track of which nodes are ready
-	allServersReady chan int
-	dataStore       map[string]interface{}  // Maps key to value
-	dataLock        *sync.Mutex
-	leaseStore      map[string]*list.List  // Maps key to hostports (LeaseWrapper) that have a lease for that key
-	leaseLock       *sync.Mutex
-	lbRange         uint32          // Lowerbound for range (for userId hash) that this server handles
-	ubRange         uint32          // Upperbound for range that this server handles
-	isTopRing       bool            // True iff node is at top of ring (smallest nodeID)
-	success         chan error  // For revoke lease
-	canGrantLease   map[string]bool  // True iff server can grant a lease for this key
+	node                storagerpc.Node
+	servers             []storagerpc.Node
+	numNodes            int
+	nextNode            int             // Idx in servers for next incoming Register request
+	seenNodes           map[uint32]bool // Seen node ids for master storage to keep track of which nodes are ready
+	allServersReady     chan int
+	dataStore           map[string]interface{} // Maps key to value
+	dataLock            *sync.Mutex
+	leaseStore          map[string]*list.List // Maps key to hostports (LeaseWrapper) that have a lease for that key
+	leaseLock           *sync.Mutex
+	lbRange             uint32          // Lowerbound for range (for userId hash) that this server handles
+	ubRange             uint32          // Upperbound for range that this server handles
+	isTopRing           bool            // True iff node is at top of ring (smallest nodeID)
+	success             chan error      // For revoke lease
+	canGrantLease       map[string]bool // True iff server can grant a lease for this key
+	allServersReadyBool bool
 }
 
 // NewStorageServer creates and starts a new StorageServer. masterServerHostPort
@@ -48,22 +49,23 @@ type storageServer struct {
 // and should return a non-nil error if the storage server could not be started.
 func NewStorageServer(masterServerHostPort string, numNodes, port int, nodeID uint32) (StorageServer, error) {
 	server := storageServer{
-		servers:         make([]storagerpc.Node, numNodes),
-		numNodes:        numNodes,
-		nextNode:        0,
-		seenNodes:       make(map[uint32]bool),
-		allServersReady: make(chan int),
-		node:            storagerpc.Node{HostPort: net.JoinHostPort("localhost", strconv.Itoa(port)), NodeID: nodeID},
-		dataStore:       make(map[string]interface{}),
-		dataLock:        &sync.Mutex{},
-		leaseStore:      make(map[string]*list.List),
-		leaseLock:       &sync.Mutex{},
-	        ubRange:         nodeID,
-	        isTopRing:       false,
-	        success:         make(chan error),
-	        canGrantLease:   make(map[string]bool)}
+		numNodes:            numNodes,
+		nextNode:            0,
+		seenNodes:           make(map[uint32]bool),
+		allServersReady:     make(chan int),
+		node:                storagerpc.Node{HostPort: net.JoinHostPort("localhost", strconv.Itoa(port)), NodeID: nodeID},
+		dataStore:           make(map[string]interface{}),
+		dataLock:            &sync.Mutex{},
+		leaseStore:          make(map[string]*list.List),
+		leaseLock:           &sync.Mutex{},
+		ubRange:             nodeID,
+		isTopRing:           false,
+		success:             make(chan error),
+		canGrantLease:       make(map[string]bool),
+		allServersReadyBool: false}
 	//server.mu.Lock()
 	//defer server.mu.Unlock()
+	fmt.Println("nodeID is: ", nodeID)
 
 	err1 := rpc.RegisterName("StorageServer", storagerpc.Wrap(&server))
 	if err1 != nil {
@@ -79,6 +81,8 @@ func NewStorageServer(masterServerHostPort string, numNodes, port int, nodeID ui
 	go http.Serve(l, nil)
 
 	if masterServerHostPort == "" { // Server is a master
+		server.servers = make([]storagerpc.Node, numNodes)
+		fmt.Println("numNodes master is: ", numNodes)
 		server.servers[server.nextNode] = server.node
 		server.nextNode++
 		if numNodes == 1 {
@@ -87,12 +91,15 @@ func NewStorageServer(masterServerHostPort string, numNodes, port int, nodeID ui
 			for {
 				select {
 				case <-server.allServersReady:
+					fmt.Println("got from allServersReady")
+					server.allServersReadyBool = true
 					server.lbRange, server.isTopRing = findLowerbound(server.servers, nodeID)
 					return &server, nil
 				}
 			}
 		}
 	} else { // Slave server
+		fmt.Println("numNodes slave is: ", numNodes)
 		cli, err1 := rpc.DialHTTP("tcp", masterServerHostPort)
 		if err1 != nil {
 			fmt.Println(err1)
@@ -123,6 +130,7 @@ func NewStorageServer(masterServerHostPort string, numNodes, port int, nodeID ui
 func (ss *storageServer) RegisterServer(args *storagerpc.RegisterArgs, reply *storagerpc.RegisterReply) error {
 	ss.dataLock.Lock()
 	defer ss.dataLock.Unlock()
+	fmt.Println("Entered register server")
 	node := args.ServerInfo
 	_, ok := ss.seenNodes[node.NodeID]
 	if !ok {
@@ -133,7 +141,9 @@ func (ss *storageServer) RegisterServer(args *storagerpc.RegisterArgs, reply *st
 	if ss.nextNode == ss.numNodes {
 		reply.Status = storagerpc.OK
 		reply.Servers = ss.servers
-		ss.allServersReady <- 1
+		if !ss.allServersReadyBool {
+			ss.allServersReady <- 1
+		}
 	} else {
 		reply.Status = storagerpc.NotReady
 		reply.Servers = nil
@@ -192,15 +202,15 @@ func (ss *storageServer) Delete(args *storagerpc.DeleteArgs, reply *storagerpc.D
 	ss.dataLock.Lock()
 	if !ss.inRange(libstore.StoreHash(args.Key)) {
 		reply.Status = storagerpc.WrongServer
-                return nil
-        }
+		ss.dataLock.Unlock()
+		return nil
+	}
 
 	_, ok := ss.dataStore[args.Key]
 	if !ok {
 		reply.Status = storagerpc.KeyNotFound
 		return nil
 	}
-	fmt.Println("setting can grant to false")
 	ss.canGrantLease[args.Key] = false
 	ss.dataLock.Unlock()
 
@@ -216,7 +226,6 @@ func (ss *storageServer) Delete(args *storagerpc.DeleteArgs, reply *storagerpc.D
 
 	ss.dataLock.Lock()
 	delete(ss.dataStore, args.Key)
-	fmt.Println("setting can grant to true")
 	ss.canGrantLease[args.Key] = true
 	ss.dataLock.Unlock()
 	reply.Status = storagerpc.OK
@@ -230,8 +239,8 @@ func (ss *storageServer) GetList(args *storagerpc.GetArgs, reply *storagerpc.Get
 
 	if !ss.inRange(libstore.StoreHash(args.Key)) {
 		reply.Status = storagerpc.WrongServer
-                return nil
-        }
+		return nil
+	}
 
 	val, ok := ss.dataStore[args.Key]
 	if ok {
@@ -242,7 +251,7 @@ func (ss *storageServer) GetList(args *storagerpc.GetArgs, reply *storagerpc.Get
 			ss.leaseLock.Lock()
 			lease := storagerpc.Lease{Granted: true, ValidSeconds: storagerpc.LeaseSeconds}
 			reply.Lease = lease
-                        // Track that this lease was issued
+			// Track that this lease was issued
 			leaseWrap := LeaseWrapper{lease: lease, timeGranted: time.Now(), hostport: args.HostPort}
 			_, ok := ss.leaseStore[args.Key]
 			if !ok {
@@ -258,14 +267,17 @@ func (ss *storageServer) GetList(args *storagerpc.GetArgs, reply *storagerpc.Get
 }
 
 func (ss *storageServer) Put(args *storagerpc.PutArgs, reply *storagerpc.PutReply) error {
-	fmt.Println("Entered storageserver Put")
 	ss.dataLock.Lock()
 
 	if !ss.inRange(libstore.StoreHash(args.Key)) {
+		fmt.Println("hash is: ", libstore.StoreHash(args.Key))
+		fmt.Println("lb is : ", ss.lbRange)
+		fmt.Println("ub is : ", ss.ubRange)
+		fmt.Println("Checked key hash")
 		reply.Status = storagerpc.WrongServer
-                return nil
-        }
-	fmt.Println("setting can grant to false")
+		ss.dataLock.Unlock()
+		return nil
+	}
 	ss.canGrantLease[args.Key] = false
 	ss.dataLock.Unlock()
 
@@ -281,7 +293,6 @@ func (ss *storageServer) Put(args *storagerpc.PutArgs, reply *storagerpc.PutRepl
 	//ss.leaseLock.Unlock()
 	ss.dataLock.Lock()
 	ss.dataStore[args.Key] = args.Value
-	fmt.Println("setting can grant to true")
 	ss.canGrantLease[args.Key] = true
 	reply.Status = storagerpc.OK
 	ss.dataLock.Unlock()
@@ -295,9 +306,9 @@ func (ss *storageServer) AppendToList(args *storagerpc.PutArgs, reply *storagerp
 
 	if !ss.inRange(libstore.StoreHash(args.Key)) {
 		reply.Status = storagerpc.WrongServer
-                return nil
-        }
-	fmt.Println("setting can grant to false")
+		ss.dataLock.Unlock()
+		return nil
+	}
 	ss.canGrantLease[args.Key] = false
 	ss.dataLock.Unlock()
 
@@ -329,7 +340,6 @@ func (ss *storageServer) AppendToList(args *storagerpc.PutArgs, reply *storagerp
 		}
 		listVal.PushBack(args.Value)
 	}
-	fmt.Println("setting can grant to true")
 	ss.canGrantLease[args.Key] = true
 	reply.Status = storagerpc.OK
 	return nil
@@ -341,9 +351,9 @@ func (ss *storageServer) RemoveFromList(args *storagerpc.PutArgs, reply *storage
 
 	if !ss.inRange(libstore.StoreHash(args.Key)) {
 		reply.Status = storagerpc.WrongServer
-                return nil
-        }
-	fmt.Println("setting can grant to false")
+		ss.dataLock.Unlock()
+		return nil
+	}
 	ss.canGrantLease[args.Key] = false
 	ss.dataLock.Unlock()
 
@@ -352,12 +362,10 @@ func (ss *storageServer) RemoveFromList(args *storagerpc.PutArgs, reply *storage
 	leaseHolders, ok := ss.leaseStore[args.Key]
 	ss.leaseLock.Unlock()
 
-
 	if ok {
 		ss.revokeLeases(leaseHolders, args.Key)
 	}
 	//ss.leaseLock.Unlock()
-
 
 	ss.dataLock.Lock()
 	defer ss.dataLock.Unlock()
@@ -371,13 +379,11 @@ func (ss *storageServer) RemoveFromList(args *storagerpc.PutArgs, reply *storage
 			if args.Value == e.Value.(string) {
 				reply.Status = storagerpc.OK
 				listVal.Remove(e)
-				fmt.Println("setting can grant to true")
 				ss.canGrantLease[args.Key] = true
 				return nil
 			}
 		}
 		reply.Status = storagerpc.ItemNotFound
-		fmt.Println("setting can grant to true")
 		ss.canGrantLease[args.Key] = true
 		return nil
 	}
@@ -389,13 +395,13 @@ func (ss *storageServer) revokeLeases(leaseHolders *list.List, key string) {
 	for e := leaseHolders.Front(); e != nil; e = e.Next() {
 		leaseWrap := e.Value.(LeaseWrapper)
 		// If lease has already expired, don't do anything
-		if (time.Now().Unix() -leaseWrap.timeGranted.Unix() >
-			storagerpc.LeaseSeconds+ storagerpc.LeaseGuardSeconds) {
+		if time.Now().Unix()-leaseWrap.timeGranted.Unix() >
+			storagerpc.LeaseSeconds+storagerpc.LeaseGuardSeconds {
 			leaseHolders.Remove(e)
 			continue
-                }
+		}
 		go ss.waitForRevokeLease(leaseWrap.hostport, key)
-		Loop:
+	Loop:
 		for {
 			select {
 			case err := <-ss.success:
@@ -405,8 +411,8 @@ func (ss *storageServer) revokeLeases(leaseHolders *list.List, key string) {
 					break Loop
 				}
 			default:
-				if (time.Now().Unix() - leaseWrap.timeGranted.Unix() >
-					storagerpc.LeaseSeconds + storagerpc.LeaseGuardSeconds) {
+				if time.Now().Unix()-leaseWrap.timeGranted.Unix() >
+					storagerpc.LeaseSeconds+storagerpc.LeaseGuardSeconds {
 					break Loop
 				}
 				time.Sleep(time.Second)
@@ -422,19 +428,20 @@ func (ss *storageServer) waitForRevokeLease(hostport string, key string) {
 		fmt.Println(err)
 	}
 	args := storagerpc.RevokeLeaseArgs{Key: key}
-        var reply storagerpc.RevokeLeaseReply
+	var reply storagerpc.RevokeLeaseReply
 	ss.success <- cli.Call("LeaseCallbacks.RevokeLease", args, &reply)
 }
 
 func (ss *storageServer) inRange(hash uint32) bool {
 	if len(ss.servers) == 1 {
+		fmt.Println("Only one node")
 		return true
 	}
 	if ss.isTopRing {
-		if hash > ss.lbRange || hash < ss.ubRange {
-			return false
-		} else {
+		if hash <= ss.ubRange || hash > ss.lbRange {
 			return true
+		} else {
+			return false
 		}
 	} else {
 		if hash > ss.ubRange || hash < ss.lbRange {
@@ -446,43 +453,43 @@ func (ss *storageServer) inRange(hash uint32) bool {
 }
 
 func ListToSlice(list *list.List) []string {
-        slice := make([]string, list.Len())
-        i := 0
-        for e := list.Front(); e != nil; e = e.Next() {
-                slice[i] = e.Value.(string)
-                i++
-        }
-        return slice
+	slice := make([]string, list.Len())
+	i := 0
+	for e := list.Front(); e != nil; e = e.Next() {
+		slice[i] = e.Value.(string)
+		i++
+	}
+	return slice
 }
 
 // Defining type for sorting servers by nodeID
 type ServersSlice []storagerpc.Node
 
 func (servers ServersSlice) Len() int {
-        return len(servers)
+	return len(servers)
 }
 
 func (servers ServersSlice) Swap(i, j int) {
-        servers[i], servers[j] = servers[j], servers[i]
+	servers[i], servers[j] = servers[j], servers[i]
 }
 
 func (servers ServersSlice) Less(i, j int) bool {
-        return servers[i].NodeID < servers[j].NodeID
+	return servers[i].NodeID < servers[j].NodeID
 }
 
 // Returns the 1 + first nodeID less than it
 func findLowerbound(servers []storagerpc.Node, nodeID uint32) (uint32, bool) {
-        sort.Sort(ServersSlice(servers))  // sorts servers by NodeID
-        // First find idx of nodeID
-        idx := 0
-        for i := 0; i < len(servers); i++ {
-                if nodeID == servers[i].NodeID {
-                        idx = i
-                        break
-                }
-        }
-        if idx != 0 {
-                return servers[idx-1].NodeID + 1, false
-        }
-        return servers[len(servers)-1].NodeID + 1, true  // wrap around case
+	sort.Sort(ServersSlice(servers)) // sorts servers by NodeID
+	// First find idx of nodeID
+	idx := 0
+	for i := 0; i < len(servers); i++ {
+		if nodeID == servers[i].NodeID {
+			idx = i
+			break
+		}
+	}
+	if idx != 0 {
+		return servers[idx-1].NodeID + 1, false
+	}
+	return servers[len(servers)-1].NodeID + 1, true // wrap around case
 }
