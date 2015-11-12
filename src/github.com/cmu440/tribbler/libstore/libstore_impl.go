@@ -9,6 +9,7 @@ import (
 	"sync"
 	//"strconv"
 	"github.com/cmu440/tribbler/rpc/storagerpc"
+	"github.com/cmu440/tribbler/rpc/librpc"
 )
 
 const TIMEOUT_GETTING_SERVERS = "GET_SERVER_TIMEOUT"
@@ -16,6 +17,7 @@ const WRONG_SERVER = "WRONG_SERVER"
 const KEY_NOT_FOUND = "KEY_NOT_FOUND"
 const ITEM_EXISTS = "ITEM_EXISTS"
 const ITEM_NOT_FOUND = "ITEM_NOT_FOUND"
+const KEY_NOT_CACHED = "REVOKE_FAILED_KEY_NOT_CACHED"
 
 const ERROR_DIAL_TCP = "ERROR_DIAL_TCP"
 const UNEXPECTED_ERROR = "UNEXPECTED_ERROR"
@@ -153,6 +155,12 @@ func NewLibstore(masterServerHostPort, myHostPort string, mode LeaseMode) (Libst
 		hostPort:   	myHostPort,
 	}
 
+	err = rpc.RegisterName("LeaseCallbacks", librpc.Wrap(&newLs))
+	if err != nil {
+		fmt.Println(err)
+		return nil, err
+	}
+
 	return &newLs, nil
 }
 
@@ -216,7 +224,7 @@ func (ls *libstore) needLease(key string) bool {
 
 		if(sinceReq.Seconds() > float64(storagerpc.QueryCacheSeconds)) {
 			//seconds have passed
-			return false
+			return idx+1 >= storagerpc.QueryCacheThresh
 
 		} 
 
@@ -356,9 +364,6 @@ func (ls *libstore) Delete(key string) error {
 		Key: key,
 	}
 
-	//TODO delete from cache
-
-
 	serverConn, err := ls.getAndCacheNode(key)
 
 	if(err != nil) {
@@ -377,7 +382,7 @@ func (ls *libstore) Delete(key string) error {
 	} 
 
 	switch reply.Status {
-		case storagerpc.OK:
+		case storagerpc.OK:	
 			return nil
 			break
 
@@ -399,20 +404,36 @@ func (ls *libstore) Delete(key string) error {
 
 func (ls *libstore) GetList(key string) ([]string, error) {
 
-	var wantLease bool = false
-
-	if ls.mode == Never {
-		wantLease = false
-	}
-	//TODO else clause after checkpoint
-
 	ls.clockQuery(key)
+	
+	value,wasCached := ls.dataMap[key]
+
+	if(wasCached) {
+		return value.([]string), nil
+	}
 
 	serverConn, err := ls.getAndCacheNode(key)
 
 	if(err != nil) {
 		//error dialling
 		return make([]string,0),err
+	}
+
+	var wantLease bool = false
+
+	switch(ls.mode) {
+		case Never:
+			wantLease = false
+			break
+		case Normal:
+			wantLease = ls.needLease(key)
+			break
+		case Always:
+			wantLease = true
+			break
+		default:
+			wantLease = false
+			break
 	}
 
 	getArgs := storagerpc.GetArgs{
@@ -432,6 +453,14 @@ func (ls *libstore) GetList(key string) ([]string, error) {
 
 	switch reply.Status {
 		case storagerpc.OK:
+			//Insert into cache if lease granted
+			//IMPR spawn thread?
+			if(reply.Lease.Granted) {
+				//insert into local cache
+				ls.dataMapLock.Lock()
+				ls.dataMap[key] = reply.Value
+				ls.dataMapLock.Unlock()
+			}
 			return reply.Value,nil
 			break
 
@@ -540,7 +569,19 @@ func (ls *libstore) AppendToList(key, newItem string) error {
 }
 
 func (ls *libstore) RevokeLease(args *storagerpc.RevokeLeaseArgs, reply *storagerpc.RevokeLeaseReply) error {
-	return errors.New("not implemented")
+	
+	_,isInCache := ls.dataMap[args.Key]
+
+	if(!isInCache) {
+		reply.Status = storagerpc.KeyNotFound
+		return nil
+	}
+
+	ls.dataMapLock.Lock()
+	delete(ls.dataMap, args.Key)
+	ls.dataMapLock.Unlock()
+	reply.Status = storagerpc.OK
+	return nil
 }
 
 /*
