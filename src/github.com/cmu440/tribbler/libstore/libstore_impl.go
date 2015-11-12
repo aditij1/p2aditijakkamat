@@ -26,6 +26,7 @@ type libstore struct {
 	allServerNodes []storagerpc.Node
 	serverConnMap 	map[storagerpc.Node]*rpc.Client
 	dataMap 		map[string]interface{}
+	dataMapLock		*sync.Mutex
 	queries 		map[string] ([]time.Time)
 	queriesLock 	*sync.Mutex
 	mode       		LeaseMode
@@ -145,6 +146,7 @@ func NewLibstore(masterServerHostPort, myHostPort string, mode LeaseMode) (Libst
 		allServerNodes: sortedNodes,
 		serverConnMap: 	make(map[storagerpc.Node]*rpc.Client),
 		dataMap: 		make(map[string] interface{}),
+		dataMapLock:	&sync.Mutex{},
 		queries: 		make(map[string] ([]time.Time)),
 		queriesLock: 	&sync.Mutex{},
 		mode:       	mode,
@@ -183,7 +185,7 @@ func (ls *libstore) getAndCacheNode(key string) (*rpc.Client, error) {
 	serverConn,isCached := ls.serverConnMap[targetNode]
 
 	if(!isCached) {
-		//initialise err variable
+		//initialise error variable
 		err := errors.New("Initialise value for err variable")
 		serverConn, err = rpc.DialHTTP("tcp", targetNode.HostPort)
 
@@ -200,16 +202,46 @@ func (ls *libstore) getAndCacheNode(key string) (*rpc.Client, error) {
 	return serverConn,nil
 }
 
+
+/**
+ Return true if the key has been queried frequently enough to request
+ a leae
+*/
+func (ls *libstore) needLease(key string) bool {
+	var requestTimes []time.Time = ls.queries[key]
+	var timeNow time.Time = time.Now()
+
+	for idx, reqTime := range requestTimes {
+		var sinceReq time.Duration = timeNow.Sub(reqTime)
+
+		if(sinceReq.Seconds() > float64(storagerpc.QueryCacheSeconds)) {
+			//seconds have passed
+			return false
+
+		} 
+
+		if(idx+1 >= storagerpc.QueryCacheThresh) {
+			return true
+		}
+		
+	}
+	
+	return false
+}
+
 func (ls *libstore) Get(key string) (string, error) {
 
-	var wantLease bool = false
-
-	if ls.mode == Never {
-		wantLease = false
-	}
 	//TODO else clause
 
 	ls.clockQuery(key)
+
+	value,wasCached := ls.dataMap[key]
+
+	if(wasCached) {
+		return value.(string), nil
+	}
+
+	/* key was not found in cache- make RPC to storageserv */
 
 	serverConn, err := ls.getAndCacheNode(key)
 
@@ -217,6 +249,22 @@ func (ls *libstore) Get(key string) (string, error) {
 		//error dialling
 		return "", err
 	}
+
+	var wantLease bool = false
+
+	switch(ls.mode) {
+		case Never:
+			wantLease = false
+			break
+		case Normal:
+			wantLease = ls.needLease(key)
+			break
+		case Always:
+			wantLease = true
+			break
+		default:
+			wantLease = false
+	} 
 
 	getArgs := storagerpc.GetArgs{
 		Key:       key,
@@ -236,6 +284,14 @@ func (ls *libstore) Get(key string) (string, error) {
 	switch reply.Status {
 
 		case storagerpc.OK:
+			//Insert into cache if lease granted
+			//IMPR spawn thread?
+			if(reply.Lease.Granted) {
+				//insert into local cache
+				ls.dataMapLock.Lock()
+				ls.dataMap[key] = reply.Value
+				ls.dataMapLock.Unlock()
+			}
 			return reply.Value, nil
 			break
 		
@@ -299,6 +355,9 @@ func (ls *libstore) Delete(key string) error {
 	delArgs := storagerpc.DeleteArgs{
 		Key: key,
 	}
+
+	//TODO delete from cache
+
 
 	serverConn, err := ls.getAndCacheNode(key)
 
