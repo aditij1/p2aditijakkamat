@@ -62,13 +62,10 @@ function testDelayedStart {
     ${STORAGE_SERVER} -N=2 -port=${STORAGE_PORT} 2> /dev/null &
     STORAGE_SERVER_PID1=$!
     sleep 5
-    echo "started master storage server"
 
     # Run lrunner.
     ${LRUNNER} -port=${STORAGE_PORT} p "key:" value &> /dev/null &
     sleep 3
-
-    echo "started LRUNNER"
 
     # Start second storage server.
     STORAGE_SLAVE_PORT=$(((RANDOM % 10000) + 10000))
