@@ -223,6 +223,7 @@ func (ss *storageServer) Delete(args *storagerpc.DeleteArgs, reply *storagerpc.D
 		fmt.Println("Got into initialize lease tracker Delete case")
                 ss.leaseTrackers[args.Key] = &LeaseTracker{pending: 0, pendingCh: make(chan chan int, 1)}
         }
+	leaseTracker = ss.leaseTrackers[args.Key]
 
 	leaseTracker.pending++
 	leaseHolders, ok := ss.leaseStore[args.Key]
@@ -422,7 +423,7 @@ func (ss *storageServer) RemoveFromList(args *storagerpc.PutArgs, reply *storage
 		fmt.Println("Got into initialize lease tracker remove from list case")
                 ss.leaseTrackers[args.Key] = &LeaseTracker{pending: 0, pendingCh: make(chan chan int, 1)}
         }
-
+	leaseTracker, _ = ss.leaseTrackers[args.Key]
 	leaseTracker.pending++
 	leaseHolders, ok := ss.leaseStore[args.Key]
 	ss.leaseLock.Unlock()
