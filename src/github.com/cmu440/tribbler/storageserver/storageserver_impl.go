@@ -74,7 +74,6 @@ func NewStorageServer(masterServerHostPort string, numNodes, port int, nodeID ui
 	        connections:         make(map[string]*rpc.Client)}
 	//server.mu.Lock()
 	//defer server.mu.Unlock()
-	fmt.Println("nodeID is: ", nodeID)
 
 	err1 := rpc.RegisterName("StorageServer", storagerpc.Wrap(&server))
 	if err1 != nil {
@@ -91,7 +90,6 @@ func NewStorageServer(masterServerHostPort string, numNodes, port int, nodeID ui
 
 	if masterServerHostPort == "" { // Server is a master
 		server.servers = make([]storagerpc.Node, numNodes)
-		fmt.Println("numNodes master is: ", numNodes)
 		server.servers[server.nextNode] = server.node
 		server.nextNode++
 		if numNodes == 1 {
@@ -100,7 +98,6 @@ func NewStorageServer(masterServerHostPort string, numNodes, port int, nodeID ui
 			for {
 				select {
 				case <-server.allServersReady:
-					fmt.Println("got from allServersReady")
 					server.allServersReadyBool = true
 					server.lbRange, server.isTopRing = findLowerbound(server.servers, nodeID)
 					return &server, nil
@@ -108,7 +105,6 @@ func NewStorageServer(masterServerHostPort string, numNodes, port int, nodeID ui
 			}
 		}
 	} else { // Slave server
-		fmt.Println("numNodes slave is: ", numNodes)
 		cli, err1 := rpc.DialHTTP("tcp", masterServerHostPort)
 		if err1 != nil {
 			fmt.Println(err1)
@@ -139,7 +135,6 @@ func NewStorageServer(masterServerHostPort string, numNodes, port int, nodeID ui
 func (ss *storageServer) RegisterServer(args *storagerpc.RegisterArgs, reply *storagerpc.RegisterReply) error {
 	ss.dataLock.Lock()
 	defer ss.dataLock.Unlock()
-	fmt.Println("Entered register server")
 	node := args.ServerInfo
 	_, ok := ss.seenNodes[node.NodeID]
 	if !ok {
@@ -194,7 +189,6 @@ func (ss *storageServer) Get(args *storagerpc.GetArgs, reply *storagerpc.GetRepl
 			reply.Lease = lease
 			// Track that this lease was issued
 			leaseWrap := LeaseWrapper{lease: lease, timeGranted: time.Now(), hostport: args.HostPort}
-			fmt.Println("time granted: ", leaseWrap.timeGranted)
 			_, ok := ss.leaseStore[args.Key]
 			if !ok {
 				ss.leaseStore[args.Key] = list.New()
@@ -228,7 +222,6 @@ func (ss *storageServer) Delete(args *storagerpc.DeleteArgs, reply *storagerpc.D
 	ss.leaseLock.Unlock()
 
 	if leaseTracker.pending > 1 {  // Block until it's our turn to modify key
-		fmt.Println("Got to pending case")
 		response := make(chan int)
 		leaseTracker.pendingCh <- response
 		<- response
@@ -311,18 +304,14 @@ func (ss *storageServer) Put(args *storagerpc.PutArgs, reply *storagerpc.PutRepl
 	leaseTracker.pending++
 	leaseHolders, ok := ss.leaseStore[args.Key]
 	ss.leaseLock.Unlock()
-	fmt.Println("Pending for key " + args.Key + " is ", leaseTracker.pending)
 	if leaseTracker.pending > 1 {  // Block until it's our turn to modify key
-		fmt.Println("got to this case")
 		response := make(chan int)
 		leaseTracker.pendingCh <- response
 		<- response
-		fmt.Println("got response")
 	}
 	if ok {
 		ss.revokeLeases(leaseHolders, args.Key)
 	}
-	fmt.Println("finished revoking leases")
 	//ss.leaseLock.Unlock()
 	ss.dataLock.Lock()
 	ss.dataStore[args.Key] = args.Value
@@ -340,7 +329,6 @@ func (ss *storageServer) Put(args *storagerpc.PutArgs, reply *storagerpc.PutRepl
 			break Loop
 		}
 	}
-	fmt.Println("Made update to key ", args.Key)
 	return nil
 }
 
@@ -367,7 +355,6 @@ func (ss *storageServer) AppendToList(args *storagerpc.PutArgs, reply *storagerp
 	ss.leaseLock.Unlock()
 
 	if leaseTracker.pending > 1 { // Block until it's our turn to modify key
-		fmt.Println("got to wait case")
 		response := make(chan int)
 		leaseTracker.pendingCh <- response
 		<- response
@@ -427,7 +414,6 @@ func (ss *storageServer) RemoveFromList(args *storagerpc.PutArgs, reply *storage
 	leaseHolders, ok := ss.leaseStore[args.Key]
 	ss.leaseLock.Unlock()
 	if leaseTracker.pending > 1 {  // Block until it's our turn to modify key
-		fmt.Println("Got to wait2 case")
 		response := make(chan int)
 		leaseTracker.pendingCh <- response
 		<- response
@@ -478,11 +464,9 @@ func (ss *storageServer) revokeLeases(leaseHolders *list.List, key string) {
 	for e := leaseHolders.Front(); e != nil; e = e.Next() {
 		leaseWrap := e.Value.(LeaseWrapper)
 		// If lease has already expired, don't do anything
-		fmt.Println("Curr time in revokeLeases: ", time.Now())
-		if time.Now().Unix()-leaseWrap.timeGranted.Unix() >
-			storagerpc.LeaseSeconds+storagerpc.LeaseGuardSeconds {
+		if time.Since(leaseWrap.timeGranted).Seconds() >
+			storagerpc.LeaseSeconds + storagerpc.LeaseGuardSeconds {
 			leaseHolders.Remove(e)
-			fmt.Println("Lease already expired")
 			continue
 		}
 		successChan := make(chan error)
@@ -491,14 +475,13 @@ func (ss *storageServer) revokeLeases(leaseHolders *list.List, key string) {
 		for {
 			select {
 			case err := <-successChan:
-				fmt.Println("got response from leasecallbacks")
 				if err != nil {
 					fmt.Println(err)
 				} else {
 					break Loop
 				}
 			default:
-				if time.Now().Unix()-leaseWrap.timeGranted.Unix() >
+				if time.Since(leaseWrap.timeGranted).Seconds() >
 					storagerpc.LeaseSeconds+storagerpc.LeaseGuardSeconds {
 					fmt.Println("timed out")
 					break Loop
