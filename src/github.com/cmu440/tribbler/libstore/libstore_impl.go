@@ -22,6 +22,8 @@ const KEY_NOT_CACHED = "REVOKE_FAILED_KEY_NOT_CACHED"
 const ERROR_DIAL_TCP = "ERROR_DIAL_TCP"
 const UNEXPECTED_ERROR = "UNEXPECTED_ERROR"
 
+const CACHE_EVICT_SECS = 10 
+
 
 type libstore struct {
 	masterServ 		*rpc.Client
@@ -31,8 +33,16 @@ type libstore struct {
 	dataMapLock		*sync.Mutex
 	queries 		map[string] ([]time.Time)
 	queriesLock 	*sync.Mutex
+	leases 			[]leaseinfo
+	leasesLock		*sync.Mutex
 	mode       		LeaseMode
 	hostPort   		string
+}
+
+type leaseinfo struct {
+	key 			string
+	grantTime		time.Time
+	validSeconds 	int
 }
 
 
@@ -72,6 +82,35 @@ Libstore deals with rerouting
 */
 
 /* Begin defining interface to enable sorting of Nodes by NodeID */
+
+
+func (ls *libstore) evictFromCache() {
+	for {
+		time.Sleep(time.Second * CACHE_EVICT_SECS)
+
+		for idx, currLease := range(ls.leases) {
+			var timePassed time.Duration = time.Since(currLease.grantTime)
+			
+			if(timePassed.Seconds() > float64(currLease.validSeconds)) {
+				/* invalidate */
+
+				//remove lease from leases slice
+				ls.leases = append(ls.leases[:idx], ls.leases[idx+1:]...)	
+
+				//remove entry from local cache
+				_,isInCache := ls.dataMap[currLease.key]
+				if(!isInCache) {
+					fmt.Println("ERROR: Trying to evict, not in cache")
+				
+				} else {
+					ls.dataMapLock.Lock()
+					delete(ls.dataMap, currLease.key)
+					ls.dataMapLock.Unlock()
+				}
+			}
+		}
+	}
+}	
 
 type NodeByID []storagerpc.Node
 
@@ -151,6 +190,8 @@ func NewLibstore(masterServerHostPort, myHostPort string, mode LeaseMode) (Libst
 		dataMapLock:	&sync.Mutex{},
 		queries: 		make(map[string] ([]time.Time)),
 		queriesLock: 	&sync.Mutex{},
+		leases:			make([]leaseinfo,0),
+		leasesLock:		&sync.Mutex{},
 		mode:       	mode,
 		hostPort:   	myHostPort,
 	}
@@ -161,6 +202,7 @@ func NewLibstore(masterServerHostPort, myHostPort string, mode LeaseMode) (Libst
 		return nil, err
 	}
 
+	go newLs.evictFromCache() //run in background
 	return &newLs, nil
 }
 
@@ -237,6 +279,27 @@ func (ls *libstore) needLease(key string) bool {
 	return false
 }
 
+func (ls *libstore) cacheAndClockLease(lease storagerpc.Lease, key string, val interface{}) {
+	if(lease.Granted) {
+		//insert into local cache
+		ls.dataMapLock.Lock()
+		ls.dataMap[key] = val
+		ls.dataMapLock.Unlock()
+
+		//create new lease and store
+		var newLease leaseinfo = leaseinfo{
+			key: key,
+			grantTime: time.Now(),
+			validSeconds: lease.ValidSeconds,
+		}
+
+		ls.leasesLock.Lock()
+		ls.leases = append(ls.leases, newLease)
+		ls.leasesLock.Unlock()
+
+	}
+}
+
 func (ls *libstore) Get(key string) (string, error) {
 
 	//TODO else clause
@@ -294,12 +357,7 @@ func (ls *libstore) Get(key string) (string, error) {
 		case storagerpc.OK:
 			//Insert into cache if lease granted
 			//IMPR spawn thread?
-			if(reply.Lease.Granted) {
-				//insert into local cache
-				ls.dataMapLock.Lock()
-				ls.dataMap[key] = reply.Value
-				ls.dataMapLock.Unlock()
-			}
+			ls.cacheAndClockLease(reply.Lease, key, reply.Value)
 			return reply.Value, nil
 			break
 		
@@ -455,12 +513,7 @@ func (ls *libstore) GetList(key string) ([]string, error) {
 		case storagerpc.OK:
 			//Insert into cache if lease granted
 			//IMPR spawn thread?
-			if(reply.Lease.Granted) {
-				//insert into local cache
-				ls.dataMapLock.Lock()
-				ls.dataMap[key] = reply.Value
-				ls.dataMapLock.Unlock()
-			}
+			ls.cacheAndClockLease(reply.Lease, key, reply.Value)
 			return reply.Value,nil
 			break
 
