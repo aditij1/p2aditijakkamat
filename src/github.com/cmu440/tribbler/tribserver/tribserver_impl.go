@@ -105,7 +105,7 @@ func (ts *tribServer) AddSubscription(args *tribrpc.SubscriptionArgs, reply *tri
 
 	if err != nil {
 
-		switch(err.Error()) {	
+		switch err.Error() {
 		case WRONG_SERVER:
 			fmt.Println("ERROR: WRONG SERVER in tribserver")
 			return errors.New("Wrong server contacted!")
@@ -113,9 +113,9 @@ func (ts *tribServer) AddSubscription(args *tribrpc.SubscriptionArgs, reply *tri
 		case KEY_NOT_FOUND:
 			reply.Status = tribrpc.NoSuchUser
 			return nil
-			
+
 		default:
-			fmt.Println("ERROR in tribserver: wrong error message received") 
+			fmt.Println("ERROR in tribserver: wrong error message received")
 			return nil
 		}
 	}
@@ -124,7 +124,7 @@ func (ts *tribServer) AddSubscription(args *tribrpc.SubscriptionArgs, reply *tri
 	_, err = ts.libStore.Get(util.FormatUserKey(subscrId))
 
 	if err != nil {
-		switch(err.Error()) {	
+		switch err.Error() {
 		case WRONG_SERVER:
 			fmt.Println("ERROR: WRONG SERVER in tribserver")
 			return errors.New("Wrong server contacted!")
@@ -132,9 +132,9 @@ func (ts *tribServer) AddSubscription(args *tribrpc.SubscriptionArgs, reply *tri
 		case KEY_NOT_FOUND:
 			reply.Status = tribrpc.NoSuchTargetUser
 			return nil
-			
+
 		default:
-			fmt.Println("ERROR in tribserver: wrong error message received") 
+			fmt.Println("ERROR in tribserver: wrong error message received")
 		}
 	}
 
@@ -165,7 +165,7 @@ func (ts *tribServer) RemoveSubscription(args *tribrpc.SubscriptionArgs, reply *
 
 	if err != nil {
 
-		switch(err.Error()) {	
+		switch err.Error() {
 		case WRONG_SERVER:
 			fmt.Println("ERROR: WRONG SERVER in tribserver")
 			return errors.New("Wrong server contacted!")
@@ -173,9 +173,9 @@ func (ts *tribServer) RemoveSubscription(args *tribrpc.SubscriptionArgs, reply *
 		case KEY_NOT_FOUND:
 			reply.Status = tribrpc.NoSuchUser
 			return nil
-			
+
 		default:
-			fmt.Println("ERROR in tribserver: wrong error message received") 
+			fmt.Println("ERROR in tribserver: wrong error message received")
 		}
 	}
 
@@ -183,7 +183,7 @@ func (ts *tribServer) RemoveSubscription(args *tribrpc.SubscriptionArgs, reply *
 	_, err = ts.libStore.Get(util.FormatUserKey(subscrId))
 
 	if err != nil {
-		switch(err.Error()) {	
+		switch err.Error() {
 		case WRONG_SERVER:
 			fmt.Println("ERROR: WRONG SERVER in tribserver")
 			return errors.New("Wrong server contacted!")
@@ -191,9 +191,9 @@ func (ts *tribServer) RemoveSubscription(args *tribrpc.SubscriptionArgs, reply *
 		case KEY_NOT_FOUND:
 			reply.Status = tribrpc.NoSuchTargetUser
 			return nil
-			
+
 		default:
-			fmt.Println("ERROR in tribserver: wrong error message received") 
+			fmt.Println("ERROR in tribserver: wrong error message received")
 			return nil
 		}
 	}
@@ -201,29 +201,29 @@ func (ts *tribServer) RemoveSubscription(args *tribrpc.SubscriptionArgs, reply *
 	//retrieve list of subsriber user IDs
 	err = ts.libStore.RemoveFromList(util.FormatSubListKey(thisUsrId), subscrId)
 
-	if(err == nil) {
+	if err == nil {
 		reply.Status = tribrpc.OK
 		return nil
 	}
 
-	switch(err.Error()) {
-		case ITEM_NOT_FOUND:
-			//User present, no subscriptions
-			reply.Status = tribrpc.NoSuchTargetUser
-			//Empty list of user IDs
-			return nil
-			
-		case WRONG_SERVER:
-			fmt.Println("ERROR: WRONG SERVER in tribserver")
-			return errors.New("Wrong server contacted!")
+	switch err.Error() {
+	case ITEM_NOT_FOUND:
+		//User present, no subscriptions
+		reply.Status = tribrpc.NoSuchTargetUser
+		//Empty list of user IDs
+		return nil
 
-		case KEY_NOT_FOUND:
-			fmt.Println("TribServ: Key was no found!")
-			reply.Status = tribrpc.NoSuchTargetUser
-			return nil
-			
-		default:
-			fmt.Println("ERROR in tribserver: wrong error message received") 
+	case WRONG_SERVER:
+		fmt.Println("ERROR: WRONG SERVER in tribserver")
+		return errors.New("Wrong server contacted!")
+
+	case KEY_NOT_FOUND:
+		fmt.Println("TribServ: Key was no found!")
+		reply.Status = tribrpc.NoSuchTargetUser
+		return nil
+
+	default:
+		fmt.Println("ERROR in tribserver: wrong error message received")
 	}
 
 	if err != nil {
@@ -246,17 +246,17 @@ func (ts *tribServer) GetSubscriptions(args *tribrpc.GetSubscriptionsArgs, reply
 	_, err := ts.libStore.Get(util.FormatUserKey(thisUsrId))
 
 	if err != nil {
-		switch(err.Error()) {
+		switch err.Error() {
 		case KEY_NOT_FOUND:
 			reply.Status = tribrpc.NoSuchUser
 			return nil
-			
+
 		case WRONG_SERVER:
 			fmt.Println("ERROR: WRONG SERVER in tribserver")
 			return errors.New("Wrong server contacted!")
-			
+
 		default:
-			fmt.Println("ERROR in tribserver: wrong error message received") 
+			fmt.Println("ERROR in tribserver: wrong error message received")
 			return errors.New("WRONG error message")
 		}
 
@@ -267,8 +267,8 @@ func (ts *tribServer) GetSubscriptions(args *tribrpc.GetSubscriptionsArgs, reply
 	}
 
 	subscrList, err := ts.libStore.GetList(util.FormatSubListKey(thisUsrId))
-	
-	if(err == nil) {
+
+	if err == nil {
 		reply.Status = tribrpc.OK
 		reply.UserIDs = subscrList
 		return nil
@@ -276,21 +276,21 @@ func (ts *tribServer) GetSubscriptions(args *tribrpc.GetSubscriptionsArgs, reply
 
 	//error not nil
 
-	switch(err.Error()) {
-		case KEY_NOT_FOUND:
-			//User present, no subscriptions
-			reply.Status = tribrpc.OK
-			//Empty list of user IDs
-			reply.UserIDs = make([]string,0)
-			return nil
-			break
+	switch err.Error() {
+	case KEY_NOT_FOUND:
+		//User present, no subscriptions
+		reply.Status = tribrpc.OK
+		//Empty list of user IDs
+		reply.UserIDs = make([]string, 0)
+		return nil
+		break
 
-		case WRONG_SERVER:
-			fmt.Println("ERROR: WRONG SERVER in tribserver")
-			return nil
-			break
-		default:
-			fmt.Println("ERROR in tribserver: wrong error message received") 
+	case WRONG_SERVER:
+		fmt.Println("ERROR: WRONG SERVER in tribserver")
+		return nil
+		break
+	default:
+		fmt.Println("ERROR in tribserver: wrong error message received")
 	}
 
 	return nil
@@ -316,7 +316,7 @@ func (ts *tribServer) PostTribble(args *tribrpc.PostTribbleArgs, reply *tribrpc.
 	_, err := ts.libStore.Get(util.FormatUserKey(thisUsrId))
 
 	if err != nil {
-		switch(err.Error()) {	
+		switch err.Error() {
 		case WRONG_SERVER:
 			fmt.Println("ERROR: WRONG SERVER in tribserver")
 			return errors.New("Wrong server contacted!")
@@ -324,9 +324,9 @@ func (ts *tribServer) PostTribble(args *tribrpc.PostTribbleArgs, reply *tribrpc.
 		case KEY_NOT_FOUND:
 			reply.Status = tribrpc.NoSuchUser
 			return nil
-			
+
 		default:
-			fmt.Println("ERROR in tribserver: wrong error message received") 
+			fmt.Println("ERROR in tribserver: wrong error message received")
 		}
 		//user not found
 		reply.Status = tribrpc.NoSuchUser
@@ -388,7 +388,7 @@ func (ts *tribServer) DeleteTribble(args *tribrpc.DeleteTribbleArgs, reply *trib
 	_, err := ts.libStore.Get(util.FormatUserKey(usrID))
 
 	if err != nil {
-		switch(err.Error()) {	
+		switch err.Error() {
 		case WRONG_SERVER:
 			fmt.Println("ERROR: WRONG SERVER in tribserver")
 			return errors.New("Wrong server contacted!")
@@ -396,18 +396,18 @@ func (ts *tribServer) DeleteTribble(args *tribrpc.DeleteTribbleArgs, reply *trib
 		case KEY_NOT_FOUND:
 			reply.Status = tribrpc.NoSuchUser
 			return nil
-			
+
 		default:
-			fmt.Println("ERROR in tribserver: wrong error message received") 
+			fmt.Println("ERROR in tribserver: wrong error message received")
 		}
-		
+
 	}
 
 	//check if postKey is stored
 	_, err = ts.libStore.Get(postKey)
 
 	if err != nil {
-		switch(err.Error()) {	
+		switch err.Error() {
 		case WRONG_SERVER:
 			fmt.Println("ERROR: WRONG SERVER in tribserver")
 			return errors.New("Wrong server contacted!")
@@ -415,9 +415,9 @@ func (ts *tribServer) DeleteTribble(args *tribrpc.DeleteTribbleArgs, reply *trib
 		case KEY_NOT_FOUND:
 			reply.Status = tribrpc.NoSuchPost
 			return nil
-			
+
 		default:
-			fmt.Println("ERROR in tribserver: wrong error message received") 
+			fmt.Println("ERROR in tribserver: wrong error message received")
 			return nil
 		}
 	}
@@ -455,7 +455,7 @@ func (ts *tribServer) GetTribbles(args *tribrpc.GetTribblesArgs, reply *tribrpc.
 	_, err := ts.libStore.Get(util.FormatUserKey(usrID))
 
 	if err != nil {
-		switch(err.Error()) {	
+		switch err.Error() {
 		case WRONG_SERVER:
 			fmt.Println("ERROR: WRONG SERVER in tribserver")
 			return errors.New("Wrong server contacted!")
@@ -463,9 +463,9 @@ func (ts *tribServer) GetTribbles(args *tribrpc.GetTribblesArgs, reply *tribrpc.
 		case KEY_NOT_FOUND:
 			reply.Status = tribrpc.NoSuchUser
 			return nil
-			
+
 		default:
-			fmt.Println("ERROR in tribserver: wrong error message received") 
+			fmt.Println("ERROR in tribserver: wrong error message received")
 		}
 	}
 
@@ -475,7 +475,7 @@ func (ts *tribServer) GetTribbles(args *tribrpc.GetTribblesArgs, reply *tribrpc.
 		//fmt.Println("Could not get list of postKeys for user")
 		//return empty tribble list, as the list is not yet created (0 tribbles)
 
-		switch(err.Error()) {
+		switch err.Error() {
 		case KEY_NOT_FOUND:
 			reply.Status = tribrpc.OK
 			reply.Tribbles = make([]tribrpc.Tribble, 0)
@@ -487,7 +487,7 @@ func (ts *tribServer) GetTribbles(args *tribrpc.GetTribblesArgs, reply *tribrpc.
 			fmt.Println("ERROR in tribserver: wrong error message received!")
 			return nil
 		}
-		
+
 	}
 
 	reply.Status = tribrpc.OK
@@ -571,7 +571,7 @@ func (ts *tribServer) GetTribblesBySubscription(args *tribrpc.GetTribblesArgs, r
 	_, err := ts.libStore.Get(util.FormatUserKey(usrID))
 
 	if err != nil {
-		switch(err.Error()) {	
+		switch err.Error() {
 		case WRONG_SERVER:
 			fmt.Println("ERROR: WRONG SERVER in tribserver")
 			return errors.New("Wrong server contacted!")
@@ -579,10 +579,10 @@ func (ts *tribServer) GetTribblesBySubscription(args *tribrpc.GetTribblesArgs, r
 		case KEY_NOT_FOUND:
 			reply.Status = tribrpc.NoSuchUser
 			return nil
-			
+
 		default:
-			fmt.Println("ERROR in tribserver: wrong error message received") 
-		}		
+			fmt.Println("ERROR in tribserver: wrong error message received")
+		}
 	}
 
 	//get list of subscribers
@@ -594,8 +594,6 @@ func (ts *tribServer) GetTribblesBySubscription(args *tribrpc.GetTribblesArgs, r
 		reply.Status = tribrpc.OK
 		return nil
 	}
-
-	// TODO - cool merge
 
 	//initialise empty slice of all postKeys from subscribers
 	var allPostKeys []string = make([]string, 0)

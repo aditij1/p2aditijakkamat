@@ -149,7 +149,7 @@ func NewLibstore(masterServerHostPort, myHostPort string, mode LeaseMode) (Libst
 
 	var tryCount int = 0
 
-	Loop:
+Loop:
 	for {
 		//fmt.Println("calling get servers")
 		err = masterServ.Call("StorageServer.GetServers", getServArgs, &getServReply)
@@ -404,7 +404,7 @@ func (ls *libstore) Put(key, value string) error {
 	err = serverConn.Call("StorageServer.Put", putArgs, &reply)
 
 	if err != nil {
-		fmt.Println("Libstore, error in Put():",err)
+		fmt.Println("Libstore, error in Put():", err)
 		return err
 
 	}
@@ -444,7 +444,7 @@ func (ls *libstore) Delete(key string) error {
 	err = serverConn.Call("StorageServer.Delete", delArgs, &reply)
 
 	if err != nil {
-		fmt.Println("LibStore Delete: error:",err)
+		fmt.Println("LibStore Delete: error:", err)
 		return err
 
 	}
@@ -563,7 +563,7 @@ func (ls *libstore) RemoveFromList(key, removeItem string) error {
 	err = serverConn.Call("StorageServer.RemoveFromList", putArgs, &reply)
 
 	if err != nil {
-		fmt.Println("Libstore, RemoveFromList rpc error:",err)
+		fmt.Println("Libstore, RemoveFromList rpc error:", err)
 		return err
 
 	}
@@ -611,7 +611,7 @@ func (ls *libstore) AppendToList(key, newItem string) error {
 	err = serverConn.Call("StorageServer.AppendToList", putArgs, &reply)
 
 	if err != nil {
-		fmt.Println("Libstore AppendToList: Error:",err)
+		fmt.Println("Libstore AppendToList: Error:", err)
 		return err
 
 	}

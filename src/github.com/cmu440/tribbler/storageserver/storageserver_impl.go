@@ -21,7 +21,7 @@ type LeaseWrapper struct {
 }
 
 type LeaseTracker struct {
-	pending int
+	pending   int
 	pendingCh chan chan int
 }
 
@@ -42,7 +42,7 @@ type storageServer struct {
 	success             chan error      // For revoke lease
 	canGrantLease       map[string]bool // True iff server can grant a lease for this key
 	allServersReadyBool bool
-	leaseTrackers       map[string]*LeaseTracker  // Maps key to lease tracker
+	leaseTrackers       map[string]*LeaseTracker // Maps key to lease tracker
 	connections         map[string]*rpc.Client   // Maps hostport to connection
 }
 
@@ -70,10 +70,8 @@ func NewStorageServer(masterServerHostPort string, numNodes, port int, nodeID ui
 		success:             make(chan error),
 		canGrantLease:       make(map[string]bool),
 		allServersReadyBool: false,
-	        leaseTrackers:       make(map[string]*LeaseTracker),
-	        connections:         make(map[string]*rpc.Client)}
-	//server.mu.Lock()
-	//defer server.mu.Unlock()
+		leaseTrackers:       make(map[string]*LeaseTracker),
+		connections:         make(map[string]*rpc.Client)}
 
 	err1 := rpc.RegisterName("StorageServer", storagerpc.Wrap(&server))
 	if err1 != nil {
@@ -135,7 +133,6 @@ func NewStorageServer(masterServerHostPort string, numNodes, port int, nodeID ui
 func (ss *storageServer) RegisterServer(args *storagerpc.RegisterArgs, reply *storagerpc.RegisterReply) error {
 	ss.dataLock.Lock()
 	defer ss.dataLock.Unlock()
-//	fmt.Println("Got register for second node")
 	node := args.ServerInfo
 	_, ok := ss.seenNodes[node.NodeID]
 	if !ok {
@@ -169,7 +166,7 @@ func (ss *storageServer) GetServers(args *storagerpc.GetServersArgs, reply *stor
 }
 
 func (ss *storageServer) Get(args *storagerpc.GetArgs, reply *storagerpc.GetReply) error {
-	fmt.Println("Entered storage server get")
+	//fmt.Println("Entered storage server get")
 	ss.dataLock.Lock()
 	defer ss.dataLock.Unlock()
 
@@ -184,7 +181,7 @@ func (ss *storageServer) Get(args *storagerpc.GetArgs, reply *storagerpc.GetRepl
 	} else {
 		reply.Status = storagerpc.OK
 		reply.Value = val.(string)
-		if args.WantLease && ss.leaseTrackers[args.Key].pending==0 {
+		if args.WantLease && ss.leaseTrackers[args.Key].pending == 0 {
 			ss.leaseLock.Lock()
 			lease := storagerpc.Lease{Granted: true, ValidSeconds: storagerpc.LeaseSeconds}
 			reply.Lease = lease
@@ -216,40 +213,39 @@ func (ss *storageServer) Delete(args *storagerpc.DeleteArgs, reply *storagerpc.D
 
 	// Leasing check
 	ss.leaseLock.Lock()
-	ss.canGrantLease[args.Key] = false
+	//ss.canGrantLease[args.Key] = false
 	leaseTracker, ok := ss.leaseTrackers[args.Key]
 
 	if !ok {
-		fmt.Println("Got into initialize lease tracker Delete case")
-                ss.leaseTrackers[args.Key] = &LeaseTracker{pending: 0, pendingCh: make(chan chan int, 1)}
-        }
+		reply.Status = storagerpc.KeyNotFound
+		ss.leaseLock.Unlock()
+		return nil
+	}
 	leaseTracker = ss.leaseTrackers[args.Key]
 
 	leaseTracker.pending++
 	leaseHolders, ok := ss.leaseStore[args.Key]
 	ss.leaseLock.Unlock()
 
-	if leaseTracker.pending > 1 {  // Block until it's our turn to modify key
+	if leaseTracker.pending > 1 { // Block until it's our turn to modify key
 		response := make(chan int)
 		leaseTracker.pendingCh <- response
-		<- response
+		<-response
 	}
 
 	if ok {
 		ss.revokeLeases(leaseHolders, args.Key)
 	}
-	//ss.leaseLock.Unlock()
 
 	ss.dataLock.Lock()
 	delete(ss.dataStore, args.Key)
-	ss.canGrantLease[args.Key] = true
 	ss.dataLock.Unlock()
 	reply.Status = storagerpc.OK
 	leaseTracker.pending--
-        Loop:
+Loop:
 	for {
 		select {
-		case ch := <- leaseTracker.pendingCh:
+		case ch := <-leaseTracker.pendingCh:
 			ch <- 1
 			break Loop
 		default:
@@ -273,7 +269,7 @@ func (ss *storageServer) GetList(args *storagerpc.GetArgs, reply *storagerpc.Get
 	if ok {
 		reply.Status = storagerpc.OK
 		reply.Value = ListToSlice(val.(*list.List))
-		if args.WantLease && ss.leaseTrackers[args.Key].pending==0 {
+		if args.WantLease && ss.leaseTrackers[args.Key].pending == 0 {
 			ss.leaseLock.Lock()
 			lease := storagerpc.Lease{Granted: true, ValidSeconds: storagerpc.LeaseSeconds}
 			reply.Lease = lease
@@ -302,7 +298,6 @@ func (ss *storageServer) Put(args *storagerpc.PutArgs, reply *storagerpc.PutRepl
 
 	// Leasing check
 	ss.leaseLock.Lock()
-	ss.canGrantLease[args.Key] = false
 	// If we have not seen this key before, initialize lease tracker
 	_, ok := ss.leaseTrackers[args.Key]
 	if !ok {
@@ -312,22 +307,20 @@ func (ss *storageServer) Put(args *storagerpc.PutArgs, reply *storagerpc.PutRepl
 	leaseTracker.pending++
 	leaseHolders, ok := ss.leaseStore[args.Key]
 	ss.leaseLock.Unlock()
-	if leaseTracker.pending > 1 {  // Block until it's our turn to modify key
+	if leaseTracker.pending > 1 { // Block until it's our turn to modify key
 		response := make(chan int)
 		leaseTracker.pendingCh <- response
-		<- response
+		<-response
 	}
 	if ok {
 		ss.revokeLeases(leaseHolders, args.Key)
 	}
-	//ss.leaseLock.Unlock()
 	ss.dataLock.Lock()
 	ss.dataStore[args.Key] = args.Value
-	ss.canGrantLease[args.Key] = true
 	reply.Status = storagerpc.OK
 	ss.dataLock.Unlock()
 	leaseTracker.pending--
-        Loop:
+Loop:
 	for {
 		select {
 		case ch := <-leaseTracker.pendingCh:
@@ -350,7 +343,6 @@ func (ss *storageServer) AppendToList(args *storagerpc.PutArgs, reply *storagerp
 
 	// Leasing check
 	ss.leaseLock.Lock()
-	ss.canGrantLease[args.Key] = false
 	// If we have not seen this key before, initialize lease tracker
 	_, ok := ss.leaseTrackers[args.Key]
 	if !ok {
@@ -365,12 +357,11 @@ func (ss *storageServer) AppendToList(args *storagerpc.PutArgs, reply *storagerp
 	if leaseTracker.pending > 1 { // Block until it's our turn to modify key
 		response := make(chan int)
 		leaseTracker.pendingCh <- response
-		<- response
+		<-response
 	}
 	if ok {
 		ss.revokeLeases(leaseHolders, args.Key)
 	}
-	//ss.leaseLock.Unlock()
 	ss.dataLock.Lock()
 	defer ss.dataLock.Unlock()
 	val, ok := ss.dataStore[args.Key]
@@ -385,18 +376,27 @@ func (ss *storageServer) AppendToList(args *storagerpc.PutArgs, reply *storagerp
 			if args.Value == e.Value.(string) {
 				reply.Status = storagerpc.ItemExists
 				leaseTracker.pending--
+			Loop1:
+				for {
+					select {
+					case ch := <-leaseTracker.pendingCh:
+						ch <- 1
+						break Loop1
+					default:
+						break Loop1
+					}
+				}
 				return nil
 			}
 		}
 		listVal.PushBack(args.Value)
 	}
-	ss.canGrantLease[args.Key] = true
 	reply.Status = storagerpc.OK
 	leaseTracker.pending--
-        Loop:
+Loop:
 	for {
 		select {
-		case ch:= <-leaseTracker.pendingCh:
+		case ch := <-leaseTracker.pendingCh:
 			ch <- 1
 			break Loop
 		default:
@@ -416,27 +416,25 @@ func (ss *storageServer) RemoveFromList(args *storagerpc.PutArgs, reply *storage
 
 	// Leasing check
 	ss.leaseLock.Lock()
-	ss.canGrantLease[args.Key] = false
 	leaseTracker, ok := ss.leaseTrackers[args.Key]
 	// Initialize lease tracker if we haven't seen this key yet
 	if !ok {
-		fmt.Println("Got into initialize lease tracker remove from list case")
-                ss.leaseTrackers[args.Key] = &LeaseTracker{pending: 0, pendingCh: make(chan chan int, 1)}
-        }
-	leaseTracker, _ = ss.leaseTrackers[args.Key]
+		reply.Status = storagerpc.KeyNotFound
+		ss.leaseLock.Unlock()
+		return nil
+	}
 	leaseTracker.pending++
 	leaseHolders, ok := ss.leaseStore[args.Key]
 	ss.leaseLock.Unlock()
-	if leaseTracker.pending > 1 {  // Block until it's our turn to modify key
+	if leaseTracker.pending > 1 { // Block until it's our turn to modify key
 		response := make(chan int)
 		leaseTracker.pendingCh <- response
-		<- response
+		<-response
 	}
 
 	if ok {
 		ss.revokeLeases(leaseHolders, args.Key)
 	}
-	//ss.leaseLock.Unlock()
 
 	ss.dataLock.Lock()
 	defer ss.dataLock.Unlock()
@@ -450,15 +448,23 @@ func (ss *storageServer) RemoveFromList(args *storagerpc.PutArgs, reply *storage
 			if args.Value == e.Value.(string) {
 				reply.Status = storagerpc.OK
 				listVal.Remove(e)
-				ss.canGrantLease[args.Key] = true
 				leaseTracker.pending--
+			Loop1:
+				for {
+					select {
+					case ch := <-leaseTracker.pendingCh:
+						ch <- 1
+						break Loop1
+					default:
+						break Loop1
+					}
+				}
 				return nil
 			}
 		}
 		reply.Status = storagerpc.ItemNotFound
-		ss.canGrantLease[args.Key] = true
 		leaseTracker.pending--
-	        Loop:
+	Loop:
 		for {
 			select {
 			case ch := <-leaseTracker.pendingCh:
@@ -479,13 +485,13 @@ func (ss *storageServer) revokeLeases(leaseHolders *list.List, key string) {
 		leaseWrap := e.Value.(LeaseWrapper)
 		// If lease has already expired, don't do anything
 		if time.Since(leaseWrap.timeGranted).Seconds() >
-			storagerpc.LeaseSeconds + storagerpc.LeaseGuardSeconds {
+			storagerpc.LeaseSeconds+storagerpc.LeaseGuardSeconds {
 			leaseHolders.Remove(e)
 			continue
 		}
 		successChan := make(chan error)
 		go ss.waitForRevokeLease(leaseWrap.hostport, key, successChan)
-	        Loop:
+	Loop:
 		for {
 			select {
 			case err := <-successChan:
