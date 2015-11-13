@@ -6,8 +6,10 @@ import (
 	"net/rpc"
 	"time"
 	"sort"
+	"sync"
 	//"strconv"
 	"github.com/cmu440/tribbler/rpc/storagerpc"
+	"github.com/cmu440/tribbler/rpc/librpc"
 )
 
 const TIMEOUT_GETTING_SERVERS = "GET_SERVER_TIMEOUT"
@@ -15,19 +17,35 @@ const WRONG_SERVER = "WRONG_SERVER"
 const KEY_NOT_FOUND = "KEY_NOT_FOUND"
 const ITEM_EXISTS = "ITEM_EXISTS"
 const ITEM_NOT_FOUND = "ITEM_NOT_FOUND"
+const KEY_NOT_CACHED = "REVOKE_FAILED_KEY_NOT_CACHED"
 
 const ERROR_DIAL_TCP = "ERROR_DIAL_TCP"
 const UNEXPECTED_ERROR = "UNEXPECTED_ERROR"
 
+const CACHE_EVICT_SECS = 1
+
 
 type libstore struct {
-	masterServ *rpc.Client
+	masterServ 		*rpc.Client
 	allServerNodes []storagerpc.Node
-	serverConnMap map[storagerpc.Node]*rpc.Client
-	mode       LeaseMode
-	hostPort   string
+	serverConnMap 	map[storagerpc.Node]*rpc.Client
+	dataMap 		map[string]interface{}
+	dataMapLock		*sync.Mutex
+	queries 		map[string] ([]time.Time)
+	queriesLock 	*sync.Mutex
+	leases 			map[leaseinfo]bool
+	leasesLock		*sync.Mutex
+	mode       		LeaseMode
+	hostPort   		string
 }
 
+type leaseinfo struct {
+	key 			string
+	grantTime		time.Time
+	validSeconds 	int
+}
+
+//TODO see if read and write to the map can occur concurrently
 
 // NewLibstore creates a new instance of a TribServer's libstore. masterServerHostPort
 // is the master storage server's host:port. myHostPort is this Libstore's host:port
@@ -66,6 +84,40 @@ Libstore deals with rerouting
 
 /* Begin defining interface to enable sorting of Nodes by NodeID */
 
+
+func (ls *libstore) evictFromCache() {
+	for {
+		time.Sleep(time.Second * CACHE_EVICT_SECS)
+
+		var invalidLeases []leaseinfo = make([]leaseinfo,0)
+
+		for currLease,_ := range(ls.leases) {
+			var timePassed time.Duration = time.Since(currLease.grantTime)
+			
+			if(timePassed.Seconds() > float64(currLease.validSeconds)) {
+				/* invalidate */
+				//fmt.Println("Evicting from cache, timeDiff:",timePassed.Seconds())
+				invalidLeases = append(invalidLeases, currLease)
+				//remove entry from local cache
+				_,isInCache := ls.dataMap[currLease.key]
+				if(!isInCache) {
+					fmt.Println("ERROR: Trying to evict, not in cache")
+				
+				} else {
+					ls.dataMapLock.Lock()
+					delete(ls.dataMap, currLease.key)
+					ls.dataMapLock.Unlock()
+				}
+			}
+		}
+
+		//IMPR parallelize?
+		for _,invalidLease := range invalidLeases {
+			delete(ls.leases, invalidLease)
+		}
+	}
+}	
+
 type NodeByID []storagerpc.Node
 
 func (nodeList NodeByID) Len() int {
@@ -84,6 +136,7 @@ func (nodeList NodeByID) Less(i,j int) bool {
 
 func NewLibstore(masterServerHostPort, myHostPort string, mode LeaseMode) (Libstore, error) {
 
+	fmt.Println("Starting NewLibstore-")
 	masterServ, err := rpc.DialHTTP("tcp", masterServerHostPort)
 
 	if err != nil {
@@ -94,27 +147,33 @@ func NewLibstore(masterServerHostPort, myHostPort string, mode LeaseMode) (Libst
 	//declare empty struct to store return
 	var getServReply storagerpc.GetServersReply
 	//retry every second, if not yet ready
-	timer := time.NewTimer(time.Second * 1)
+	//timer := time.NewTimer(time.Second * 1)
+
 	var tryCount int = 0
 
 	for {
+		//fmt.Println("calling get servers")
 		err = masterServ.Call("StorageServer.GetServers", getServArgs, &getServReply)
-
+		//fmt.Println("Return from rpc call")
 		if err != nil {
 			return nil, err
 
 		} else {
 			//err is nil
 			if getServReply.Status == storagerpc.OK {
+				//fmt.Println("NewLibstore: Status OK, breaking..")
 				break
 			}
 		}
 
-		if(tryCount == 5) {
+		if(tryCount == 4) {
 			return nil,errors.New(TIMEOUT_GETTING_SERVERS)
 		}
 		//status is not OK; wait for timer
-		<-timer.C
+
+		//fmt.Println("Waiting for timer channel..")
+		time.Sleep(1*time.Second)
+		//fmt.Println("Slowserv: counting ", tryCount)
 		tryCount++
 	}
 
@@ -127,17 +186,55 @@ func NewLibstore(masterServerHostPort, myHostPort string, mode LeaseMode) (Libst
 	var sortedNodes []storagerpc.Node = []storagerpc.Node(toBeSortedNodes)
 	fmt.Println(sortedNodes)
 
+	//initialise server-connection map
+	serverConnMap := make(map[storagerpc.Node]*rpc.Client)
+
+	//initialise connection with all nodes
+	for _,node := range sortedNodes {
+		serverConn, err := rpc.DialHTTP("tcp", node.HostPort)
+
+		if(err != nil) {
+			fmt.Println("Error DialHTTP in libstore with a node")
+		
+		} else {
+			//add to cache
+			serverConnMap[node] = serverConn
+		} 
+	}
+
 	//TODo add master server to map?
 
 	var newLs libstore = libstore{
-		masterServ: masterServ,
+		masterServ: 	masterServ,
 		allServerNodes: sortedNodes,
-		serverConnMap: make(map[storagerpc.Node]*rpc.Client),
-		mode:       mode,
-		hostPort:   myHostPort,
+		serverConnMap: 	serverConnMap,
+		dataMap: 		make(map[string] interface{}),
+		dataMapLock:	&sync.Mutex{},
+		queries: 		make(map[string] ([]time.Time)),
+		queriesLock: 	&sync.Mutex{},
+		leases:			make(map[leaseinfo]bool),
+		leasesLock:		&sync.Mutex{},
+		mode:       	mode,
+		hostPort:   	myHostPort,
 	}
 
+	err = rpc.RegisterName("LeaseCallbacks", librpc.Wrap(&newLs))
+	if err != nil {
+		fmt.Println(err)
+		return nil, err
+	}
+
+	go newLs.evictFromCache() //run in background
 	return &newLs, nil
+}
+
+/* Add key to queries[] map */
+func (ls *libstore) clockQuery(key string) {
+	
+	ls.queriesLock.Lock()
+	var reqTimes []time.Time = ls.queries[key]
+	ls.queries[key] = append([]time.Time{time.Now()},reqTimes...)
+	ls.queriesLock.Unlock()
 }
 
 func (ls *libstore) getAndCacheNode(key string) (*rpc.Client, error) {
@@ -150,7 +247,7 @@ func (ls *libstore) getAndCacheNode(key string) (*rpc.Client, error) {
 
 	//Find target server
 	for _,currNode := range(ls.allServerNodes) {
-		if(currNode.NodeID < hashCode) {
+		if(currNode.NodeID >= hashCode) {
 			//take the first NodeID that > hashCode
 			targetNode = currNode
 			break
@@ -160,31 +257,73 @@ func (ls *libstore) getAndCacheNode(key string) (*rpc.Client, error) {
 	serverConn,isCached := ls.serverConnMap[targetNode]
 
 	if(!isCached) {
-		//initialise err variable
-		err := errors.New("Initialise value for err variable")
-		serverConn, err = rpc.DialHTTP("tcp", targetNode.HostPort)
-
-		if(err != nil) {
-			fmt.Println("Error DialHTTP in libstore")
-			return nil, errors.New(ERROR_DIAL_TCP)
-		
-		} else {
-			//add to cache
-			ls.serverConnMap[targetNode] = serverConn
-		} 
+		//initialise error variable
+		fmt.Println("ERROR IN LIBSTORE: Connection not initialised yet for server") 
 	}
 
 	return serverConn,nil
 }
 
+
+/**
+ Return true if the key has been queried frequently enough to request
+ a leae
+*/
+func (ls *libstore) needLease(key string) bool {
+	var requestTimes []time.Time = ls.queries[key]
+	var timeNow time.Time = time.Now()
+
+	for idx, reqTime := range requestTimes {
+		var sinceReq time.Duration = timeNow.Sub(reqTime)
+
+		if(sinceReq.Seconds() > float64(storagerpc.QueryCacheSeconds)) {
+			//seconds have passed
+			return idx+1 >= storagerpc.QueryCacheThresh
+
+		} 
+
+		if(idx+1 >= storagerpc.QueryCacheThresh) {
+			return true
+		}
+		
+	}
+	
+	return false
+}
+
+func (ls *libstore) cacheAndClockLease(lease storagerpc.Lease, key string, val interface{}) {
+	if(lease.Granted) {
+		//insert key-value into local cache
+		ls.dataMapLock.Lock()
+		ls.dataMap[key] = val
+		ls.dataMapLock.Unlock()
+
+		//create new lease and store
+		var newLease leaseinfo = leaseinfo{
+			key: key,
+			grantTime: time.Now(),
+			validSeconds: lease.ValidSeconds,
+		}
+
+		ls.leasesLock.Lock()
+		ls.leases[newLease] = true
+		ls.leasesLock.Unlock()
+	}
+}
+
 func (ls *libstore) Get(key string) (string, error) {
 
-	var wantLease bool = false
-
-	if ls.mode == Never {
-		wantLease = false
-	}
 	//TODO else clause
+
+	ls.clockQuery(key)
+
+	value,wasCached := ls.dataMap[key]
+
+	if(wasCached) {
+		return value.(string), nil
+	}
+
+	/* key was not found in cache- make RPC to storageserv */
 
 	serverConn, err := ls.getAndCacheNode(key)
 
@@ -192,6 +331,22 @@ func (ls *libstore) Get(key string) (string, error) {
 		//error dialling
 		return "", err
 	}
+
+	var wantLease bool = false
+
+	switch(ls.mode) {
+		case Never:
+			wantLease = false
+			break
+		case Normal:
+			wantLease = ls.needLease(key)
+			break
+		case Always:
+			wantLease = true
+			break
+		default:
+			wantLease = false
+	} 
 
 	getArgs := storagerpc.GetArgs{
 		Key:       key,
@@ -211,6 +366,9 @@ func (ls *libstore) Get(key string) (string, error) {
 	switch reply.Status {
 
 		case storagerpc.OK:
+			//Insert into cache if lease granted
+			//IMPR spawn thread?
+			ls.cacheAndClockLease(reply.Lease, key, reply.Value)
 			return reply.Value, nil
 			break
 		
@@ -293,7 +451,7 @@ func (ls *libstore) Delete(key string) error {
 	} 
 
 	switch reply.Status {
-		case storagerpc.OK:
+		case storagerpc.OK:	
 			return nil
 			break
 
@@ -315,18 +473,36 @@ func (ls *libstore) Delete(key string) error {
 
 func (ls *libstore) GetList(key string) ([]string, error) {
 
-	var wantLease bool = false
+	ls.clockQuery(key)
+	
+	value,wasCached := ls.dataMap[key]
 
-	if ls.mode == Never {
-		wantLease = false
+	if(wasCached) {
+		return value.([]string), nil
 	}
-	//TODO else clause after checkpoint
 
 	serverConn, err := ls.getAndCacheNode(key)
 
 	if(err != nil) {
 		//error dialling
 		return make([]string,0),err
+	}
+
+	var wantLease bool = false
+
+	switch(ls.mode) {
+		case Never:
+			wantLease = false
+			break
+		case Normal:
+			wantLease = ls.needLease(key)
+			break
+		case Always:
+			wantLease = true
+			break
+		default:
+			wantLease = false
+			break
 	}
 
 	getArgs := storagerpc.GetArgs{
@@ -346,6 +522,9 @@ func (ls *libstore) GetList(key string) ([]string, error) {
 
 	switch reply.Status {
 		case storagerpc.OK:
+			//Insert into cache if lease granted
+			//IMPR spawn thread?
+			ls.cacheAndClockLease(reply.Lease, key, reply.Value)
 			return reply.Value,nil
 			break
 
@@ -454,7 +633,19 @@ func (ls *libstore) AppendToList(key, newItem string) error {
 }
 
 func (ls *libstore) RevokeLease(args *storagerpc.RevokeLeaseArgs, reply *storagerpc.RevokeLeaseReply) error {
-	return errors.New("not implemented")
+	
+	_,isInCache := ls.dataMap[args.Key]
+
+	if(!isInCache) {
+		reply.Status = storagerpc.KeyNotFound
+		return nil
+	}
+
+	ls.dataMapLock.Lock()
+	delete(ls.dataMap, args.Key)
+	ls.dataMapLock.Unlock()
+	reply.Status = storagerpc.OK
+	return nil
 }
 
 /*
