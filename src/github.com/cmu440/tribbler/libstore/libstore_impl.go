@@ -355,6 +355,7 @@ func (ls *libstore) Get(key string) (string, error) {
 	err = serverConn.Call("StorageServer.Get", getArgs, &reply)
 
 	if err != nil {
+
 		fmt.Println("LibStore Get: Error:", err)
 		return "", err
 
@@ -403,6 +404,7 @@ func (ls *libstore) Put(key, value string) error {
 	err = serverConn.Call("StorageServer.Put", putArgs, &reply)
 
 	if err != nil {
+		fmt.Println("Libstore, error in Put():",err)
 		return err
 
 	}
@@ -442,7 +444,7 @@ func (ls *libstore) Delete(key string) error {
 	err = serverConn.Call("StorageServer.Delete", delArgs, &reply)
 
 	if err != nil {
-		fmt.Println("LibStore Delete: error")
+		fmt.Println("LibStore Delete: error:",err)
 		return err
 
 	}
@@ -513,6 +515,7 @@ func (ls *libstore) GetList(key string) ([]string, error) {
 	err = serverConn.Call("StorageServer.GetList", getArgs, &reply)
 
 	if err != nil {
+		fmt.Println("Libstore GetList error:", err)
 		return make([]string, 0), err
 
 	}
@@ -560,6 +563,7 @@ func (ls *libstore) RemoveFromList(key, removeItem string) error {
 	err = serverConn.Call("StorageServer.RemoveFromList", putArgs, &reply)
 
 	if err != nil {
+		fmt.Println("Libstore, RemoveFromList rpc error:",err)
 		return err
 
 	}
@@ -607,7 +611,7 @@ func (ls *libstore) AppendToList(key, newItem string) error {
 	err = serverConn.Call("StorageServer.AppendToList", putArgs, &reply)
 
 	if err != nil {
-		fmt.Println("Libstore AppendToList: Error")
+		fmt.Println("Libstore AppendToList: Error:",err)
 		return err
 
 	}
