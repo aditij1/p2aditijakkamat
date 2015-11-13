@@ -41,7 +41,7 @@ TRIB_SERVER=$GOPATH/bin/trunner
 function startStorageServers {
     N=${#STORAGE_ID[@]}
     # Start master storage server.
-    ${STORAGE_SERVER} -N=${N} -id=${STORAGE_ID[0]} -port=${STORAGE_PORT} &> /dev/null &
+    ${STORAGE_SERVER} -N=${N} -id=${STORAGE_ID[0]} -port=${STORAGE_PORT} &
     STORAGE_SERVER_PID[0]=$!
     # Start slave storage servers.
     if [ "$N" -gt 1 ]
@@ -49,7 +49,7 @@ function startStorageServers {
         for i in `seq 1 $((N - 1))`
         do
 	    STORAGE_SLAVE_PORT=$(((RANDOM % 10000) + 10000))
-            ${STORAGE_SERVER} -port=${STORAGE_SLAVE_PORT} -id=${STORAGE_ID[$i]} -master="localhost:${STORAGE_PORT}" &> /dev/null &
+            ${STORAGE_SERVER} -port=${STORAGE_SLAVE_PORT} -id=${STORAGE_ID[$i]} -master="localhost:${STORAGE_PORT}" &
             STORAGE_SERVER_PID[$i]=$!
         done
     fi
@@ -61,7 +61,7 @@ function stopStorageServers {
     for i in `seq 0 $((N - 1))`
     do
         kill -9 ${STORAGE_SERVER_PID[$i]}
-        wait ${STORAGE_SERVER_PID[$i]} 2> /dev/null
+        wait ${STORAGE_SERVER_PID[$i]} 
     done
 }
 
@@ -70,7 +70,7 @@ function startTribServers {
     do
         # Pick random port between [10000, 20000).
         TRIB_PORT[$i]=$(((RANDOM % 10000) + 10000))
-        ${TRIB_SERVER} -port=${TRIB_PORT[$i]} "localhost:${STORAGE_PORT}" &> /dev/null &
+        ${TRIB_SERVER} -port=${TRIB_PORT[$i]} "localhost:${STORAGE_PORT}" &
         TRIB_SERVER_PID[$i]=$!
     done
     sleep 5
@@ -80,7 +80,7 @@ function stopTribServers {
     for i in `seq 0 $((M - 1))`
     do
         kill -9 ${TRIB_SERVER_PID[$i]}
-        wait ${TRIB_SERVER_PID[$i]} 2> /dev/null
+        wait ${TRIB_SERVER_PID[$i]}
     done
 }
 
@@ -99,7 +99,7 @@ function testStress {
             ${STRESS_CLIENT} -port=${TRIB_PORT[$((C % M))]} -clientId=${CLIENT} ${USER} ${K} & 
             STRESS_CLIENT_PID[$C]=$!
             # Setup background thread to kill client upon timeout.
-            sleep ${TIMEOUT} && kill -9 ${STRESS_CLIENT_PID[$C]} &> /dev/null &
+            sleep ${TIMEOUT} && kill -9 ${STRESS_CLIENT_PID[$C]} &
             C=$((C + 1))
         done
     done
@@ -109,7 +109,7 @@ function testStress {
     FAIL=0
     for i in `seq 0 $((C - 1))`
     do
-        wait ${STRESS_CLIENT_PID[$i]} 2> /dev/null
+        wait ${STRESS_CLIENT_PID[$i]} 
         if [ "$?" -ne 7 ]
         then
             FAIL=$((FAIL + 1))
