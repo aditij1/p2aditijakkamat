@@ -135,6 +135,7 @@ func NewStorageServer(masterServerHostPort string, numNodes, port int, nodeID ui
 func (ss *storageServer) RegisterServer(args *storagerpc.RegisterArgs, reply *storagerpc.RegisterReply) error {
 	ss.dataLock.Lock()
 	defer ss.dataLock.Unlock()
+//	fmt.Println("Got register for second node")
 	node := args.ServerInfo
 	_, ok := ss.seenNodes[node.NodeID]
 	if !ok {
@@ -216,7 +217,13 @@ func (ss *storageServer) Delete(args *storagerpc.DeleteArgs, reply *storagerpc.D
 	// Leasing check
 	ss.leaseLock.Lock()
 	ss.canGrantLease[args.Key] = false
-	leaseTracker, _ := ss.leaseTrackers[args.Key]
+	leaseTracker, ok := ss.leaseTrackers[args.Key]
+
+	if !ok {
+		fmt.Println("Got into initialize lease tracker Delete case")
+                ss.leaseTrackers[args.Key] = &LeaseTracker{pending: 0, pendingCh: make(chan chan int, 1)}
+        }
+
 	leaseTracker.pending++
 	leaseHolders, ok := ss.leaseStore[args.Key]
 	ss.leaseLock.Unlock()
@@ -409,7 +416,13 @@ func (ss *storageServer) RemoveFromList(args *storagerpc.PutArgs, reply *storage
 	// Leasing check
 	ss.leaseLock.Lock()
 	ss.canGrantLease[args.Key] = false
-	leaseTracker, _ := ss.leaseTrackers[args.Key]
+	leaseTracker, ok := ss.leaseTrackers[args.Key]
+	// Initialize lease tracker if we haven't seen this key yet
+	if !ok {
+		fmt.Println("Got into initialize lease tracker remove from list case")
+                ss.leaseTrackers[args.Key] = &LeaseTracker{pending: 0, pendingCh: make(chan chan int, 1)}
+        }
+
 	leaseTracker.pending++
 	leaseHolders, ok := ss.leaseStore[args.Key]
 	ss.leaseLock.Unlock()
