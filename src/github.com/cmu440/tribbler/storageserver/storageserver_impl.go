@@ -14,6 +14,8 @@ import (
 	"time"
 )
 
+const DBG = false
+
 type LeaseWrapper struct {
 	lease       storagerpc.Lease
 	timeGranted time.Time
@@ -166,7 +168,9 @@ func (ss *storageServer) GetServers(args *storagerpc.GetServersArgs, reply *stor
 }
 
 func (ss *storageServer) Get(args *storagerpc.GetArgs, reply *storagerpc.GetReply) error {
-	//fmt.Println("Entered storage server get")
+	if DBG {
+		fmt.Println("Entered storage server get")
+	}
 	ss.dataLock.Lock()
 	defer ss.dataLock.Unlock()
 
@@ -199,7 +203,9 @@ func (ss *storageServer) Get(args *storagerpc.GetArgs, reply *storagerpc.GetRepl
 }
 
 func (ss *storageServer) Delete(args *storagerpc.DeleteArgs, reply *storagerpc.DeleteReply) error {
-	fmt.Println("Entered storageserver delete")
+	if DBG {
+		fmt.Println("Entered storageserver delete")
+	}
 	if !ss.inRange(libstore.StoreHash(args.Key)) {
 		reply.Status = storagerpc.WrongServer
 		return nil
@@ -256,7 +262,9 @@ Loop:
 }
 
 func (ss *storageServer) GetList(args *storagerpc.GetArgs, reply *storagerpc.GetListReply) error {
-	fmt.Println("Entered storageserver GetList")
+	if DBG {
+		fmt.Println("Entered storageserver GetList")
+	}
 	ss.dataLock.Lock()
 	defer ss.dataLock.Unlock()
 
@@ -289,7 +297,9 @@ func (ss *storageServer) GetList(args *storagerpc.GetArgs, reply *storagerpc.Get
 }
 
 func (ss *storageServer) Put(args *storagerpc.PutArgs, reply *storagerpc.PutReply) error {
-	fmt.Println("Entered storage server put with key ", args.Key)
+	if DBG {
+		fmt.Println("Entered storage server put with key ", args.Key)
+	}
 
 	if !ss.inRange(libstore.StoreHash(args.Key)) {
 		reply.Status = storagerpc.WrongServer
@@ -334,7 +344,9 @@ Loop:
 }
 
 func (ss *storageServer) AppendToList(args *storagerpc.PutArgs, reply *storagerpc.PutReply) error {
-	fmt.Println("Entered storageserver AppendToList")
+	if DBG {
+		fmt.Println("Entered storageserver AppendToList")
+	}
 
 	if !ss.inRange(libstore.StoreHash(args.Key)) {
 		reply.Status = storagerpc.WrongServer
@@ -407,13 +419,14 @@ Loop:
 }
 
 func (ss *storageServer) RemoveFromList(args *storagerpc.PutArgs, reply *storagerpc.PutReply) error {
-	fmt.Println("Entered storageserver RemoveFromList")
+	if DBG {
+		fmt.Println("Entered storageserver RemoveFromList")
+	}
 
 	if !ss.inRange(libstore.StoreHash(args.Key)) {
 		reply.Status = storagerpc.WrongServer
 		return nil
 	}
-
 	// Leasing check
 	ss.leaseLock.Lock()
 	leaseTracker, ok := ss.leaseTrackers[args.Key]
@@ -431,7 +444,6 @@ func (ss *storageServer) RemoveFromList(args *storagerpc.PutArgs, reply *storage
 		leaseTracker.pendingCh <- response
 		<-response
 	}
-
 	if ok {
 		ss.revokeLeases(leaseHolders, args.Key)
 	}

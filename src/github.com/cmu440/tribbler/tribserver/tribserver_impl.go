@@ -27,6 +27,8 @@ const KEY_NOT_CACHED = "REVOKE_FAILED_KEY_NOT_CACHED"
 const ERROR_DIAL_TCP = "ERROR_DIAL_TCP"
 const UNEXPECTED_ERROR = "UNEXPECTED_ERROR"
 
+const DBG = false
+
 type tribServer struct {
 	libStore libstore.Libstore
 }
@@ -65,7 +67,9 @@ func NewTribServer(masterServerHostPort, myHostPort string) (TribServer, error) 
 }
 
 func (ts *tribServer) CreateUser(args *tribrpc.CreateUserArgs, reply *tribrpc.CreateUserReply) error {
-	fmt.Println("-----> CreateUser")
+	if DBG {
+		fmt.Println("-----> CreateUser")
+	}
 	var usrID string = args.UserID
 
 	_, err := ts.libStore.Get(util.FormatUserKey(usrID))
@@ -90,7 +94,9 @@ func (ts *tribServer) CreateUser(args *tribrpc.CreateUserArgs, reply *tribrpc.Cr
 }
 
 func (ts *tribServer) AddSubscription(args *tribrpc.SubscriptionArgs, reply *tribrpc.SubscriptionReply) error {
-	fmt.Println("-----> AddSubscription")
+	if DBG {
+		fmt.Println("-----> AddSubscription")
+	}
 	/*
 		-Check if user present
 		-Check if user being subscribed to is present
@@ -156,7 +162,9 @@ func (ts *tribServer) AddSubscription(args *tribrpc.SubscriptionArgs, reply *tri
 check if both values exist, then delete the sub
 */
 func (ts *tribServer) RemoveSubscription(args *tribrpc.SubscriptionArgs, reply *tribrpc.SubscriptionReply) error {
-	fmt.Println("-----> RemoveSubscription")
+	if DBG {
+		fmt.Println("-----> RemoveSubscription")
+	}
 	var thisUsrId string = args.UserID
 	var subscrId string = args.TargetUserID
 
@@ -218,7 +226,7 @@ func (ts *tribServer) RemoveSubscription(args *tribrpc.SubscriptionArgs, reply *
 		return errors.New("Wrong server contacted!")
 
 	case KEY_NOT_FOUND:
-		fmt.Println("TribServ: Key was no found!")
+		fmt.Println("TribServ: Key was not found!")
 		reply.Status = tribrpc.NoSuchTargetUser
 		return nil
 
@@ -236,7 +244,9 @@ func (ts *tribServer) RemoveSubscription(args *tribrpc.SubscriptionArgs, reply *
 }
 
 func (ts *tribServer) GetSubscriptions(args *tribrpc.GetSubscriptionsArgs, reply *tribrpc.GetSubscriptionsReply) error {
-	fmt.Println("-----> GetSubscriptions")
+	if DBG {
+		fmt.Println("-----> GetSubscriptions")
+	}
 	/*
 		formatsublistkey
 	*/
@@ -308,7 +318,9 @@ func (ts *tribServer) GetSubscriptions(args *tribrpc.GetSubscriptionsArgs, reply
 */
 func (ts *tribServer) PostTribble(args *tribrpc.PostTribbleArgs, reply *tribrpc.PostTribbleReply) error {
 
-	fmt.Println("-----> PostTribble")
+	if DBG {
+		fmt.Println("-----> PostTribble")
+	}
 	var thisUsrId string = args.UserID
 	var content string = args.Contents
 
@@ -378,12 +390,16 @@ func (ts *tribServer) PostTribble(args *tribrpc.PostTribbleArgs, reply *tribrpc.
 */
 
 func (ts *tribServer) DeleteTribble(args *tribrpc.DeleteTribbleArgs, reply *tribrpc.DeleteTribbleReply) error {
-	fmt.Println("-----> Delete(), postKey: ", args.PostKey)
+	if DBG {
+		fmt.Println("-----> Delete(), postKey: ", args.PostKey)
+	}
 
 	var usrID string = args.UserID
 	var postKey string = args.PostKey
 
-	fmt.Println("Delete(), postKey: ", postKey)
+	if DBG {
+		fmt.Println("Delete(), postKey: ", postKey)
+	}
 	//check if user present in server
 	_, err := ts.libStore.Get(util.FormatUserKey(usrID))
 
@@ -448,7 +464,9 @@ func (ts *tribServer) DeleteTribble(args *tribrpc.DeleteTribbleArgs, reply *trib
 */
 func (ts *tribServer) GetTribbles(args *tribrpc.GetTribblesArgs, reply *tribrpc.GetTribblesReply) error {
 
-	fmt.Println("-----> GetTribbles")
+	if DBG {
+		fmt.Println("-----> GetTribbles")
+	}
 	var usrID string = args.UserID
 
 	//check if user present in server
@@ -497,7 +515,9 @@ func (ts *tribServer) GetTribbles(args *tribrpc.GetTribblesArgs, reply *tribrpc.
 }
 
 func (ts *tribServer) getTribbleList(postKeysList []string) []tribrpc.Tribble {
-	fmt.Println("-----> getTribbleList")
+	if DBG {
+		fmt.Println("-----> getTribbleList")
+	}
 	//min(100, length of slice)
 	var sliceSize int = int(math.Min(float64(len(postKeysList)), 100))
 
@@ -564,7 +584,9 @@ func (pkSlice PostByTime) Less(i, j int) bool {
 */
 func (ts *tribServer) GetTribblesBySubscription(args *tribrpc.GetTribblesArgs, reply *tribrpc.GetTribblesReply) error {
 
-	fmt.Println("-----> GetTribblesBySubscription")
+	if DBG {
+		fmt.Println("-----> GetTribblesBySubscription")
+	}
 	var usrID string = args.UserID
 
 	//check if user present in server

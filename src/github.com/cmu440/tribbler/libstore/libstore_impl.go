@@ -22,7 +22,7 @@ const KEY_NOT_CACHED = "REVOKE_FAILED_KEY_NOT_CACHED"
 const ERROR_DIAL_TCP = "ERROR_DIAL_TCP"
 const UNEXPECTED_ERROR = "UNEXPECTED_ERROR"
 
-const CACHE_EVICT_SECS = 1
+const CACHE_EVICT_SECS = 2
 
 type libstore struct {
 	masterServ     *rpc.Client
