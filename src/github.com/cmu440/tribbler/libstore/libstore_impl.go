@@ -149,6 +149,7 @@ func NewLibstore(masterServerHostPort, myHostPort string, mode LeaseMode) (Libst
 
 	var tryCount int = 0
 
+	Loop:
 	for {
 		//fmt.Println("calling get servers")
 		err = masterServ.Call("StorageServer.GetServers", getServArgs, &getServReply)
@@ -160,7 +161,7 @@ func NewLibstore(masterServerHostPort, myHostPort string, mode LeaseMode) (Libst
 			//err is nil
 			if getServReply.Status == storagerpc.OK {
 				//fmt.Println("NewLibstore: Status OK, breaking..")
-				break
+				break Loop
 			}
 		}
 
