@@ -147,7 +147,7 @@ func NewLibstore(masterServerHostPort, myHostPort string, mode LeaseMode) (Libst
 	//declare empty struct to store return
 	var getServReply storagerpc.GetServersReply
 	//retry every second, if not yet ready
-	timer := time.NewTimer(time.Second * 1)
+	//timer := time.NewTimer(time.Second * 1)
 
 	var tryCount int = 0
 
@@ -172,7 +172,7 @@ func NewLibstore(masterServerHostPort, myHostPort string, mode LeaseMode) (Libst
 		//status is not OK; wait for timer
 
 		//fmt.Println("Waiting for timer channel..")
-		<-timer.C
+		time.Sleep(1*time.Second)
 		//fmt.Println("Slowserv: counting ", tryCount)
 		tryCount++
 	}
@@ -247,7 +247,7 @@ func (ls *libstore) getAndCacheNode(key string) (*rpc.Client, error) {
 
 	//Find target server
 	for _,currNode := range(ls.allServerNodes) {
-		if(currNode.NodeID > hashCode) {
+		if(currNode.NodeID >= hashCode) {
 			//take the first NodeID that > hashCode
 			targetNode = currNode
 			break
