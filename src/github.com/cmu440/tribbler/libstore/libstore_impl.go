@@ -355,7 +355,7 @@ func (ls *libstore) Get(key string) (string, error) {
 	err = serverConn.Call("StorageServer.Get", getArgs, &reply)
 
 	if err != nil {
-		fmt.Println("LibStore Get: Error")
+		fmt.Println("LibStore Get: Error:", err)
 		return "", err
 
 	}
@@ -373,14 +373,15 @@ func (ls *libstore) Get(key string) (string, error) {
 		return "", errors.New(WRONG_SERVER)
 		break
 
+	case storagerpc.KeyNotFound:
+		return "", errors.New(KEY_NOT_FOUND)
+		break
+
 	default:
 		fmt.Println("LibStore received unexpected error")
 		return "", errors.New(UNEXPECTED_ERROR)
 		break
 	}
-
-	//fmt.Println("LibStore Get: Error")
-	//return "", errors.New("Reply status not Ok")
 
 	return reply.Value, nil
 }
@@ -574,6 +575,10 @@ func (ls *libstore) RemoveFromList(key, removeItem string) error {
 
 	case storagerpc.WrongServer:
 		return errors.New(WRONG_SERVER)
+		break
+
+	case storagerpc.KeyNotFound:
+		return errors.New(KEY_NOT_FOUND)
 		break
 
 	default:
