@@ -49,18 +49,18 @@ func NewTribServer(masterServerHostPort, myHostPort string) (TribServer, error) 
 	var tribServ tribServer = tribServer{
 		libStore: libStore,
 	}
-
-	err1 := rpc.RegisterName("TribServer", tribrpc.Wrap(&tribServ))
-	if err1 != nil {
-		fmt.Println(err1)
-		return nil, err1
-	}
-	rpc.HandleHTTP()
 	l, err2 := net.Listen("tcp", myHostPort)
 	if err2 != nil {
 		fmt.Println(err2)
 		return nil, err2
 	}
+	//go http.Serve(l, nil)
+	err1 := rpc.RegisterName("TribServer", tribrpc.Wrap(&tribServ))
+        if err1 != nil {
+                fmt.Println(err1)
+		return nil, err1
+        }
+        rpc.HandleHTTP()
 	go http.Serve(l, nil)
 
 	return &tribServ, nil
