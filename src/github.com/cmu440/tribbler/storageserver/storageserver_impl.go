@@ -24,8 +24,8 @@ type LeaseWrapper struct {
 
 // For each key to track modifications to it
 type TrackPending struct {
-	pending   int  // Number of modifications waiting
-	pendingCh chan chan int  // When a function wants to modify the key, puts a request on this channel
+	pending   int           // Number of modifications waiting
+	pendingCh chan chan int // When a function wants to modify the key, puts a request on this channel
 }
 
 type storageServer struct {
@@ -76,17 +76,19 @@ func NewStorageServer(masterServerHostPort string, numNodes, port int, nodeID ui
 		pendingMap:          make(map[string]*TrackPending),
 		connections:         make(map[string]*rpc.Client)}
 
+	l, err2 := net.Listen("tcp", net.JoinHostPort("localhost", strconv.Itoa(port)))
+        if err2 != nil {
+                fmt.Println(err2)
+                return nil, err2
+        }
+       // go http.Serve(l, nil)
+
 	err1 := rpc.RegisterName("StorageServer", storagerpc.Wrap(&server))
 	if err1 != nil {
 		fmt.Println(err1)
 		return nil, err1
 	}
 	rpc.HandleHTTP()
-	l, err2 := net.Listen("tcp", ":"+strconv.Itoa(port))
-	if err2 != nil {
-		fmt.Println(err2)
-		return nil, err2
-	}
 	go http.Serve(l, nil)
 
 	if masterServerHostPort == "" { // Server is a master
@@ -108,6 +110,7 @@ func NewStorageServer(masterServerHostPort string, numNodes, port int, nodeID ui
 	} else { // Slave server
 		cli, err1 := rpc.DialHTTP("tcp", masterServerHostPort)
 		if err1 != nil {
+			fmt.Println("got in this case")
 			fmt.Println(err1)
 			return nil, err1
 		}
@@ -172,15 +175,15 @@ func (ss *storageServer) Get(args *storagerpc.GetArgs, reply *storagerpc.GetRepl
 	if DBG {
 		fmt.Println("Entered storage server get")
 	}
-	ss.dataLock.Lock()
-	defer ss.dataLock.Unlock()
 
 	if !ss.inRange(libstore.StoreHash(args.Key)) {
 		reply.Status = storagerpc.WrongServer
 		return nil
 	}
-
+	ss.dataLock.Lock()
 	val, ok := ss.dataStore[args.Key]
+	ss.dataLock.Unlock()
+
 	if !ok {
 		reply.Status = storagerpc.KeyNotFound
 	} else {
@@ -264,15 +267,13 @@ func (ss *storageServer) GetList(args *storagerpc.GetArgs, reply *storagerpc.Get
 	if DBG {
 		fmt.Println("Entered storageserver GetList")
 	}
-	ss.dataLock.Lock()
-	defer ss.dataLock.Unlock()
-
 	if !ss.inRange(libstore.StoreHash(args.Key)) {
 		reply.Status = storagerpc.WrongServer
 		return nil
 	}
-
+	ss.dataLock.Lock()
 	val, ok := ss.dataStore[args.Key]
+	ss.dataLock.Unlock()
 	if ok {
 		reply.Status = storagerpc.OK
 		reply.Value = ListToSlice(val.(*list.List))
